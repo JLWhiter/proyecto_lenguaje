@@ -1,0 +1,192 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap');
+
+:root {
+  font-family: 'Manrope', sans-serif;
+  color: #20241f;
+  background: #f3f4ef;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --ink: #20241f;
+  --muted: #72776e;
+  --line: #dfe2d9;
+  --green: #2b6d4d;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background-image: radial-gradient(#cfd4c9 0.65px, transparent 0.65px);
+  background-size: 18px 18px;
+}
+
+button, a { font: inherit; }
+
+.shell {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  padding: 0 7.2%;
+  background: linear-gradient(115deg, rgba(243,244,239,.97) 20%, rgba(243,244,239,.83) 100%);
+}
+
+.topbar, .footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.topbar {
+  height: 86px;
+  border-bottom: 1px solid var(--line);
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.wordmark-mark {
+  display: grid;
+  width: 30px;
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--green);
+  color: white;
+  font-size: 13px;
+}
+
+.topbar-label, .eyebrow, .footer, .stack-line {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.topbar-label { color: var(--muted); }
+
+.content {
+  width: min(100%, 720px);
+  margin: auto;
+  padding: 76px 0 92px;
+  animation: arrive 500ms ease-out both;
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 24px;
+  color: var(--green);
+}
+
+.eyebrow span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #75a27c;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(44px, 6vw, 68px);
+  font-weight: 600;
+  line-height: 1.08;
+}
+
+.intro {
+  max-width: 500px;
+  margin: 22px 0 40px;
+  color: #646a61;
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+.status-panel {
+  display: flex;
+  min-height: 92px;
+  align-items: center;
+  gap: 16px;
+  padding: 17px 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255,255,255,.73);
+}
+
+.status-icon {
+  display: grid;
+  width: 38px;
+  aspect-ratio: 1;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: #e5eee6;
+  color: var(--green);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.status-offline .status-icon { background: #f5e9e4; color: #a3472c; }
+.status-loading .status-icon { background: #eceee8; color: #656b61; }
+
+.status-copy { min-width: 0; flex: 1; }
+.status-title { margin: 0; font-size: 13px; font-weight: 700; }
+.status-detail { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+.refresh-button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid #cbd3c8;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.refresh-button:hover:not(:disabled) { border-color: var(--green); color: var(--green); }
+.refresh-button:disabled { cursor: wait; opacity: .55; }
+
+.stack-line {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-top: 25px;
+  color: #80857c;
+}
+
+.stack-line i { width: 3px; height: 3px; border-radius: 50%; background: #a6aaa1; }
+
+.footer {
+  min-height: 64px;
+  border-top: 1px solid var(--line);
+  color: #858a81;
+  font-size: 9px;
+}
+
+@keyframes arrive {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 600px) {
+  .shell { padding: 0 22px; }
+  .topbar { height: 70px; }
+  .topbar-label { font-size: 8px; }
+  .content { padding: 58px 0 68px; }
+  h1 { font-size: 46px; }
+  .intro { font-size: 14px; }
+  .status-panel { flex-wrap: wrap; gap: 12px; padding: 15px; }
+  .status-copy { flex-basis: calc(100% - 54px); }
+  .refresh-button { margin-left: 50px; }
+  .footer { font-size: 8px; }
+}
