@@ -1,80 +1,34 @@
-import { useEffect, useState } from 'react'
-
-async function fetchHealth() {
-  const response = await fetch('/api/health/')
-  if (!response.ok) throw new Error('La API no respondió correctamente')
-  return response.json()
-}
+import { Navigate, Route, Routes } from 'react-router-dom'
+import { GuestRoute, ProtectedRoute } from './components/RouteGuards'
+import FinovaDashboardPage from './pages/FinovaDashboardPage'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import LegalPage from './pages/LegalPage'
+import LoginPage from './pages/LoginPage'
+import NotFoundPage from './pages/NotFoundPage'
+import RegisterPage from './pages/RegisterPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
+import VerifyEmailPage from './pages/VerifyEmailPage'
 
 export default function App() {
-  const [health, setHealth] = useState({ state: 'loading', service: '' })
-
-  async function checkApi() {
-    setHealth({ state: 'loading', service: '' })
-    try {
-      const result = await fetchHealth()
-      setHealth({ state: 'online', service: result.service })
-    } catch {
-      setHealth({ state: 'offline', service: '' })
-    }
-  }
-
-  useEffect(() => {
-    checkApi()
-  }, [])
-
-  const statusText = {
-    loading: 'Comprobando conexión',
-    online: 'API conectada',
-    offline: 'API no disponible',
-  }[health.state]
-
   return (
-    <main className="shell">
-      <header className="topbar">
-        <a className="wordmark" href="/" aria-label="proyecto-lenguaje, inicio">
-          <span className="wordmark-mark">pl</span>
-          <span>proyecto-lenguaje</span>
-        </a>
-        <span className="topbar-label">ENTORNO DE DESARROLLO</span>
-      </header>
+    <Routes>
+      <Route element={<GuestRoute />}>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/registro" element={<RegisterPage />} />
+        <Route path="/recuperar-contrasena" element={<ForgotPasswordPage />} />
+        <Route path="/restablecer-contrasena" element={<ResetPasswordPage />} />
+        <Route path="/verificar-email" element={<VerifyEmailPage />} />
+        <Route path="/terminos" element={<LegalPage tab="terminos" />} />
+        <Route path="/privacidad" element={<LegalPage tab="privacidad" />} />
+      </Route>
 
-      <section className="content" aria-labelledby="page-title">
-        <p className="eyebrow"><span /> ESPACIO DE TRABAJO</p>
-        <h1 id="page-title">Todo listo para<br />empezar.</h1>
-        <p className="intro">
-          Tu espacio de proyecto ya está en marcha. Revisa la conexión entre la
-          interfaz y el servidor para continuar.
-        </p>
+      <Route element={<ProtectedRoute />}>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<FinovaDashboardPage />} />
+        <Route path="/cuenta" element={<Navigate to="/dashboard" replace />} />
+      </Route>
 
-        <section className={`status-panel status-${health.state}`} aria-live="polite">
-          <div className="status-icon" aria-hidden="true">
-            {health.state === 'loading' ? '…' : health.state === 'online' ? '✓' : '!' }
-          </div>
-          <div className="status-copy">
-            <p className="status-title">{statusText}</p>
-            <p className="status-detail">
-              {health.state === 'online'
-                ? health.service
-                : health.state === 'offline'
-                  ? 'Inicia Django en el puerto 8000 y vuelve a comprobar.'
-                  : 'Conectando con el backend Django…'}
-            </p>
-          </div>
-          <button className="refresh-button" onClick={checkApi} disabled={health.state === 'loading'}>
-            Comprobar
-          </button>
-        </section>
-
-        <div className="stack-line" aria-label="Tecnologías">
-          <span>Django</span><i /> <span>React</span><i /> <span>Vite</span>
-        </div>
-      </section>
-
-      <footer className="footer">
-        <span>proyecto-lenguaje</span>
-        <span>BACKEND + FRONTEND</span>
-      </footer>
-    </main>
+      <Route path="*" element={<NotFoundPage />} />
+    </Routes>
   )
 }
