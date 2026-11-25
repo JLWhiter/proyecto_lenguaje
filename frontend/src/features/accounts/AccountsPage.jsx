@@ -1,314 +1,266 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ArrowRightLeft, Landmark, PencilLine, Plus, Wallet } from 'lucide-react'
-import CategoryIcon from '../../components/finance/CategoryIcon'
-import { EmptyState, ErrorState, FilterChips, IconButton, PageSkeleton } from '../../components/ui'
+import { useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Bell, ChevronRight, Plus, RotateCw, Wallet } from 'lucide-react'
+import { EmptyState, ErrorState, Skeleton, useConfirm, useToast } from '../../components/ui'
+import { useInvalidate } from '../../context/FinanceDataContext'
 import { usePeriod } from '../../context/PeriodContext'
+import { usePreferences } from '../../context/PreferencesContext'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { useMoney } from '../../hooks/useMoney'
-import AlertCard, { ALL_ALERTS, alertFilterOptions, filterAlerts } from '../alerts/AlertCard'
-import { useAlertActions, useAlerts } from '../alerts/useAlerts'
-import { RebalanceDialog } from '../budgets/BudgetDialogs'
-import { TransactionDialog, TransferDialog } from '../transactions/TransactionDialogs'
-import { useExportTransactions } from '../transactions/useExportTransactions'
-import { AccountBalanceDialog, AccountDialog } from './AccountDialogs'
-import { useAccounts } from './useAccounts'
+import { accountsApi } from '../../lib/api/accounts'
+import { toNumber } from '../../lib/format'
+import { DepositDialog, TransferDialog } from '../transactions/TransactionDialogs'
+import AccountCard from './AccountCard'
+import { AccountBalanceDialog, AccountFormDialog } from './AccountDialogs'
+import AccountsSummary from './AccountsSummary'
+import { ACCOUNT_MUTATION_TAGS, movementsSearch, useAccounts } from './useAccounts'
 
-const BADGE_STYLES = {
-  Activa: 'bg-emerald-100 text-emerald-700',
-  Instantánea: 'bg-indigo-100 text-indigo-700',
-}
+const PRIMARY_BUTTON =
+  'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#10B981] px-4 text-sm font-semibold text-white shadow-sm shadow-emerald-200 hover:bg-[#059669]'
 
 export default function AccountsPage() {
-  useDocumentTitle('Cuentas')
-  const navigate = useNavigate()
-  const { search } = usePeriod()
+  useDocumentTitle('Mis cuentas')
+  const { search, defaultPeriod } = usePeriod()
   const { money } = useMoney()
+  const { showAmounts } = usePreferences()
+  const confirm = useConfirm()
+  const toast = useToast()
+  const invalidate = useInvalidate()
   const accounts = useAccounts()
-  const alerts = useAlerts()
-  const { act } = useAlertActions()
-  const { exportCsv } = useExportTransactions()
-  const [view, setView] = useState('accounts')
-  const [alertFilter, setAlertFilter] = useState(ALL_ALERTS)
   const [dialog, setDialog] = useState(null)
+  const [pendingId, setPendingId] = useState(null)
+  const titleRef = useRef(null)
   const closeDialog = () => setDialog(null)
 
+  const ready = accounts.status === 'ready'
   const accountList = accounts.data?.accounts ?? []
-  const alertItems = alerts.data?.items ?? []
-  const filteredAlerts = useMemo(() => filterAlerts(alertItems, alertFilter), [alertItems, alertFilter])
+  const isEmpty = ready && accountList.length === 0
+  const canTransfer = accountList.length >= 2
+  const patrimonio = toNumber(accounts.data?.patrimonio)
 
-  const tabs = [
-    {
-      key: 'accounts',
-      label: (
-        <>
-          Mis Cuentas
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] text-emerald-700">{accountList.length}</span>
-        </>
-      ),
-    },
-    {
-      key: 'alerts',
-      label: (
-        <>
-          Alertas Activas
-          <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] text-red-700">{alertItems.length}</span>
-        </>
-      ),
-    },
-  ]
+  function openTransfer(account, extra = {}) {
+    const other = accountList.find((item) => item.id !== account.id)
+    setDialog({
+      type: 'transfer',
+      initialValues: {
+        source_account_id: String(account.id),
+        ...(other ? { destination_account_id: String(other.id) } : {}),
+        ...extra,
+      },
+    })
+  }
 
-  function goToTransactions(account) {
-    const params = new URLSearchParams(search)
-    params.set('cuenta', account.nombre)
-    navigate({ pathname: '/app/movimientos', search: `?${params}` })
+  async function requestDelete(account) {
+    const balance = toNumber(account.saldo)
+
+    // Regla del backend: solo se elimina con saldo 0. Lo explicamos antes de intentarlo
+    // y ofrecemos el camino para dejarlo en 0.
+    if (Math.abs(balance) >= 0.005) {
+      const moveMoney = canTransfer && balance > 0
+      const amountText = showAmounts ? `tiene un saldo de ${money(balance)}` : 'todavía tiene saldo'
+      const ok = await confirm({
+        title: 'Primero deja el saldo en 0',
+        message: `«${account.nombre}» ${amountText}. Solo puedes eliminar una cuenta con saldo 0: ${
+          moveMoney ? 'transfiere ese dinero a otra de tus cuentas' : 'actualiza su saldo a 0 si ese dinero ya no existe'
+        } y vuelve a intentarlo.`,
+        confirmLabel: moveMoney ? 'Transferir saldo' : 'Actualizar saldo',
+        cancelLabel: 'Ahora no',
+      })
+      if (!ok) return
+      if (moveMoney) openTransfer(account, { amount: balance.toFixed(2) })
+      else setDialog({ type: 'balance', account })
+      return
+    }
+
+    const ok = await confirm({
+      title: `¿Eliminar «${account.nombre}»?`,
+      message:
+        'Si la cuenta tiene movimientos, se archivará: dejará de aparecer en tus cuentas y en los formularios, pero su historial se conserva. Si no tiene movimientos, se eliminará definitivamente.',
+      confirmLabel: 'Eliminar cuenta',
+      tone: 'danger',
+    })
+    if (!ok) return
+
+    setPendingId(account.id)
+    try {
+      const result = await accountsApi.remove(account.id)
+      invalidate(ACCOUNT_MUTATION_TAGS)
+      toast.success(
+        result?.accion === 'archivada'
+          ? `«${account.nombre}» tenía movimientos, así que se archivó. Su historial se conserva.`
+          : result?.message || 'Cuenta eliminada.',
+      )
+      titleRef.current?.focus({ preventScroll: true })
+    } catch (error) {
+      // Mensaje del backend, p. ej. "Solo puedes eliminar una cuenta con saldo S/ 0.00…".
+      toast.error(error?.message || 'No se pudo eliminar la cuenta.')
+      invalidate('accounts')
+    } finally {
+      setPendingId(null)
+    }
+  }
+
+  function handleAction(type, account) {
+    if (type === 'create') setDialog({ type: 'create' })
+    else if (type === 'edit') setDialog({ type: 'edit', account })
+    else if (type === 'balance') setDialog({ type: 'balance', account })
+    else if (type === 'deposit') setDialog({ type: 'deposit', initialValues: { account_id: String(account.id) } })
+    else if (type === 'transfer') openTransfer(account)
+    else if (type === 'delete') requestDelete(account)
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">Cuentas & Centro de Alertas</h1>
-          <p className="mt-2 text-sm text-slate-500">Gestión patrimonial y alertas en tiempo real</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <h1 ref={titleRef} tabIndex={-1} className="text-3xl font-bold text-slate-900 outline-none">
+            Mis cuentas
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+            Registra tus cuentas bancarias, billeteras digitales y efectivo. Finova no se conecta a tu banco: el saldo
+            cambia con los movimientos que registras.
+          </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setDialog({ type: 'account' })}
-          className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-[#10B981] px-4 py-3 text-sm font-semibold text-white hover:bg-[#059669] sm:self-auto"
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          Cuenta
-        </button>
+        {!isEmpty && (
+          <button
+            type="button"
+            onClick={() => setDialog({ type: 'create' })}
+            className={`${PRIMARY_BUTTON} shrink-0 self-start whitespace-nowrap sm:self-auto`}
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Nueva cuenta
+          </button>
+        )}
       </div>
 
-      <div className="rounded-[28px] border border-slate-200 bg-white p-3 shadow-sm">
-        <FilterChips label="Vista" options={tabs} value={view} onChange={setView} chipClassName="px-4 font-semibold" />
-      </div>
+      {accounts.status === 'loading' && <AccountsSkeleton />}
 
-      {view === 'accounts' ? (
-        <>
-          {accounts.status === 'loading' && <PageSkeleton title={false} stats={2} blocks={2} label="Cargando cuentas" />}
-          {accounts.status === 'error' && (
-            <ErrorState title="No pudimos cargar tus cuentas" error={accounts.error} onRetry={accounts.reload} />
-          )}
-          {accounts.status === 'ready' && (
-            <div className="space-y-6">
-              <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="net-worth-title">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-                      <Landmark className="h-5 w-5" aria-hidden="true" />
-                    </div>
-                    <h2 id="net-worth-title" className="text-lg font-semibold text-slate-900">
-                      Patrimonio Neto Consolidado
-                    </h2>
-                  </div>
-                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">• {accountList.length} Conectadas</span>
-                </div>
-                <div className="mt-5">
-                  <p className="break-words text-4xl font-extrabold text-slate-900">{money(accounts.data.patrimonio)}</p>
-                  <span className="mt-2 inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                    {accountList.length > 0 ? '↗ +6.4% mes' : '0.0% mes'}
-                  </span>
-                </div>
+      {accounts.status === 'error' && (
+        <ErrorState title="No pudimos cargar tus cuentas" error={accounts.error} onRetry={accounts.reload} />
+      )}
 
-                <div className="mt-5 grid gap-4 md:grid-cols-2">
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <p className="text-sm text-slate-500">Liquidez Inmediata</p>
-                    <p className="mt-2 text-2xl font-bold text-slate-900">{money(accounts.data.liquidez)}</p>
-                  </div>
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <p className="text-sm text-slate-500">Efectivo Físico</p>
-                    <p className="mt-2 text-2xl font-bold text-slate-900">{money(accounts.data.efectivo)}</p>
-                  </div>
-                </div>
-              </section>
-
-              <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="accounts-list-title">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <h2 id="accounts-list-title" className="text-xl font-bold text-slate-900">
-                    Bancos & Billeteras Conectadas
-                  </h2>
-                  <span className="text-sm text-slate-500">Actualizado hoy 10:45 AM</span>
-                </div>
-
-                <ul className="mt-5 space-y-4">
-                  {accountList.map((account) => (
-                    <li key={account.id} className="rounded-[24px] border border-slate-200 bg-slate-50 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-                            <CategoryIcon name={account.icon} className="h-5 w-5" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <p className="break-words text-lg font-bold text-slate-900">{account.nombre}</p>
-                              {account.estado === 'Activa' && (
-                                <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" aria-label="Cuenta activa" role="img" />
-                              )}
-                            </div>
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
-                              {account.badge && (
-                                <span
-                                  className={`rounded-full px-2 py-1 text-[10px] font-semibold ${BADGE_STYLES[account.badge] ?? 'bg-amber-100 text-amber-700'}`}
-                                >
-                                  {account.badge}
-                                </span>
-                              )}
-                              <span className="break-words">
-                                {account.tipo}
-                                {account.descripcion ? ` • ${account.descripcion}` : ''}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <IconButton label={`Actualizar saldo de ${account.nombre}`} onClick={() => setDialog({ type: 'balance', account })}>
-                          <PencilLine className="h-4 w-4" />
-                        </IconButton>
-                      </div>
-
-                      <div className="mt-4 flex flex-col gap-3 rounded-2xl bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0">
-                          <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Saldo Disponible</p>
-                          <p className="mt-1 break-words text-2xl font-bold text-slate-900">{money(account.saldo)}</p>
-                        </div>
-                        <div className="flex items-center justify-between gap-2 sm:justify-start">
-                          <button
-                            type="button"
-                            onClick={() => goToTransactions(account)}
-                            className="min-h-10 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                          >
-                            Movimientos
-                          </button>
-                          <IconButton
-                            label={`Transferir desde ${account.nombre}`}
-                            variant="dark"
-                            shape="square"
-                            disabled={accountList.length < 2}
-                            onClick={() => setDialog({ type: 'transfer', initialValues: { source_account_id: String(account.id) } })}
-                          >
-                            <ArrowRightLeft className="h-4 w-4" />
-                          </IconButton>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-                {accountList.length === 0 && (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
-                    <Wallet className="mx-auto h-6 w-6 text-slate-400" aria-hidden="true" />
-                    <p className="mt-2 text-sm text-slate-600">Aún no tienes cuentas agregadas.</p>
-                    <button
-                      type="button"
-                      onClick={() => setDialog({ type: 'account' })}
-                      className="mt-3 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
-                    >
-                      Agregar primera cuenta
-                    </button>
-                  </div>
-                )}
-              </section>
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="space-y-6">
-          <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="account-alerts-title">
-            <div>
-              <h2 id="account-alerts-title" className="text-2xl font-bold text-slate-900">
-                Alertas del Sistema Financiero
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">Monitoreo continuo de desvíos y vencimientos</p>
-            </div>
-            {alerts.status === 'ready' && (
-              <FilterChips
-                className="mt-5"
-                tone="emerald"
-                label="Filtrar alertas"
-                options={alertFilterOptions(alerts.data.filters)}
-                value={alertFilter}
-                onChange={setAlertFilter}
-              />
-            )}
-          </section>
-
-          {alerts.status === 'loading' && <PageSkeleton title={false} stats={0} blocks={2} label="Cargando alertas" />}
-          {alerts.status === 'error' && <ErrorState title="No pudimos cargar tus alertas" error={alerts.error} onRetry={alerts.reload} />}
-          {alerts.status === 'ready' && (
-            <div className="space-y-4">
-              {filteredAlerts.map((alert) => (
-                <AlertCard key={alert.id} alert={alert}>
-                  {alert.nivel === 'rojo' && (
-                    <button
-                      type="button"
-                      onClick={() => setDialog({ type: 'rebalance' })}
-                      className="min-h-10 rounded-xl bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-300"
-                    >
-                      Reasignar fondo
-                    </button>
-                  )}
-                  {alert.nivel === 'amber' && (
-                    <button
-                      type="button"
-                      onClick={() => act(alert, 'confirm')}
-                      className="min-h-10 rounded-xl bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-300"
-                    >
-                      Confirmar gasto
-                    </button>
-                  )}
-                  {alert.nivel === 'indigo' && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setDialog({
-                          type: 'transaction',
-                          initialValues: { name: 'Pago tarjeta Interbank', category: 'Pago de tarjeta', amount: '480.00', type: 'GASTO' },
-                        })
-                      }
-                      className="min-h-10 rounded-xl bg-[#10B981] px-3 py-2 text-sm font-semibold text-white hover:bg-[#059669]"
-                    >
-                      Pagar ahora S/ 480.00
-                    </button>
-                  )}
-                  {alert.nivel === 'green' && (
-                    <button type="button" onClick={exportCsv} className="min-h-10 rounded-xl text-sm font-semibold text-emerald-700 hover:underline">
-                      Ver reporte detallado
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      alert.nivel === 'amber'
-                        ? act(alert, 'confirm_fraud')
-                        : alert.nivel === 'rojo'
-                          ? act(alert, 'read')
-                          : alert.nivel === 'indigo'
-                            ? act(alert, 'snooze')
-                            : exportCsv()
-                    }
-                    className="min-h-10 text-sm font-medium text-slate-500 underline underline-offset-2 hover:text-slate-700"
-                  >
-                    {alert.nivel === 'amber'
-                      ? 'Reportar fraude'
-                      : alert.nivel === 'rojo'
-                        ? 'Marcar como leída'
-                        : alert.nivel === 'indigo'
-                          ? 'Posponer 24h'
-                          : 'Ver reporte detallado'}
-                  </button>
-                </AlertCard>
-              ))}
-              {filteredAlerts.length === 0 && <EmptyState variant="inline" className="bg-white" description="No hay alertas activas para este filtro." />}
-            </div>
-          )}
+      {ready && accounts.error && (
+        <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          <span>No pudimos actualizar tus cuentas; puede que veas datos de hace un momento.</span>
+          <button
+            type="button"
+            onClick={accounts.reload}
+            className="inline-flex min-h-10 items-center gap-1.5 font-semibold text-amber-900 hover:underline"
+          >
+            <RotateCw className="h-4 w-4" aria-hidden="true" />
+            Reintentar
+          </button>
         </div>
       )}
 
-      {dialog?.type === 'account' && <AccountDialog onClose={closeDialog} />}
+      {isEmpty && (
+        <EmptyState
+          icon={Wallet}
+          title="Crea tu primera cuenta"
+          description="Agrega tu cuenta bancaria, tu billetera digital o el efectivo que tienes a mano con su saldo actual. Después podrás registrar ingresos, gastos y transferencias entre ellas."
+          action={
+            <button type="button" onClick={() => setDialog({ type: 'create' })} className={PRIMARY_BUTTON}>
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Crear mi primera cuenta
+            </button>
+          }
+          className="py-10"
+        />
+      )}
+
+      {ready && accountList.length > 0 && (
+        <>
+          <AccountsSummary data={accounts.data} count={accountList.length} month={defaultPeriod} />
+
+          <section aria-labelledby="accounts-list-title" className="space-y-4">
+            <div>
+              <h2 id="accounts-list-title" className="text-xl font-bold text-slate-900">
+                Tus cuentas
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Las cuentas archivadas no aparecen aquí, pero su historial sigue en Movimientos.
+              </p>
+            </div>
+            <ul className="space-y-4">
+              {accountList.map((account) => (
+                <li key={account.id}>
+                  <AccountCard
+                    account={account}
+                    movementsTo={{ pathname: '/app/movimientos', search: movementsSearch(search, account.id) }}
+                    share={patrimonio > 0 ? (Math.max(0, toNumber(account.saldo)) / patrimonio) * 100 : null}
+                    canTransfer={canTransfer}
+                    busy={pendingId === account.id}
+                    onAction={handleAction}
+                  />
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <Link
+            to={{ pathname: '/app/alertas', search }}
+            className="group flex items-center gap-4 rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/40 sm:p-5"
+          >
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
+              <Bell className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-semibold text-slate-900">Ver alertas</span>
+              <span className="block text-sm text-slate-500">Revisa los avisos sobre tus presupuestos y movimientos.</span>
+            </span>
+            <ChevronRight className="h-5 w-5 shrink-0 text-slate-400 transition group-hover:translate-x-0.5" aria-hidden="true" />
+          </Link>
+        </>
+      )}
+
+      {(dialog?.type === 'create' || dialog?.type === 'edit') && <AccountFormDialog account={dialog.account} onClose={closeDialog} />}
       {dialog?.type === 'balance' && <AccountBalanceDialog account={dialog.account} onClose={closeDialog} />}
       {dialog?.type === 'transfer' && <TransferDialog initialValues={dialog.initialValues} onClose={closeDialog} />}
-      {dialog?.type === 'transaction' && <TransactionDialog initialValues={dialog.initialValues} onClose={closeDialog} />}
-      {dialog?.type === 'rebalance' && <RebalanceDialog onClose={closeDialog} />}
+      {dialog?.type === 'deposit' && <DepositDialog initialValues={dialog.initialValues} onClose={closeDialog} />}
+    </div>
+  )
+}
+
+function AccountsSkeleton() {
+  return (
+    <div className="space-y-6" role="status" aria-label="Cargando cuentas">
+      <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="grid gap-6 xl:grid-cols-2">
+          <div>
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-11 w-11 rounded-2xl" />
+              <Skeleton className="h-5 w-36" />
+            </div>
+            <Skeleton className="mt-4 h-10 w-56 max-w-full" />
+            <Skeleton className="mt-3 h-7 w-48 max-w-full" />
+          </div>
+          <div>
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="mt-3 h-3 w-full rounded-full" />
+            <Skeleton className="mt-4 h-14 w-full rounded-2xl" />
+            <Skeleton className="mt-2 h-14 w-full rounded-2xl" />
+          </div>
+        </div>
+      </div>
+      <Skeleton className="h-6 w-32" />
+      {[0, 1, 2].map((index) => (
+        <div key={index} className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex items-start gap-3">
+            <Skeleton className="h-12 w-12 shrink-0 rounded-2xl" />
+            <div className="flex-1 space-y-2 pt-1">
+              <Skeleton className="h-5 w-40 max-w-full" />
+              <Skeleton className="h-4 w-56 max-w-full" />
+            </div>
+          </div>
+          <Skeleton className="mt-5 h-8 w-44 max-w-full" />
+          <div className="mt-4 grid grid-cols-3 gap-2 sm:flex">
+            <Skeleton className="h-14 sm:h-10 sm:w-36" />
+            <Skeleton className="h-14 sm:h-10 sm:w-32" />
+            <Skeleton className="h-14 sm:h-10 sm:w-32" />
+          </div>
+        </div>
+      ))}
+      <span className="sr-only">Cargando cuentas</span>
     </div>
   )
 }
