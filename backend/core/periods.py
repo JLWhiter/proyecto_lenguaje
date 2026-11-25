@@ -1,9 +1,9 @@
 """Períodos mensuales ('AAAA-MM') y fechas en la hora local del proyecto.
 
 Las funciones que reciben fechas son puras y se prueban sin Django. Solo
-``local_today``, ``current_period``, ``local_midnight``, ``period_bounds``,
-``year_bounds`` y ``end_of_today`` consultan la zona horaria configurada en
-``settings.TIME_ZONE`` (America/Lima).
+``local_today``, ``current_period``, ``period_of_moment``, ``local_midnight``,
+``period_bounds``, ``year_bounds`` y ``end_of_today`` consultan la zona horaria
+configurada en ``settings.TIME_ZONE`` (America/Lima).
 """
 
 import calendar
@@ -86,6 +86,11 @@ def local_today():
 def current_period():
     """Período del mes actual en hora local, por ejemplo '2026-11'."""
     return period_of(local_today())
+
+
+def period_of_moment(moment):
+    """Período, en hora local, de un datetime con zona horaria (por ejemplo, el de un movimiento)."""
+    return period_of(timezone.localtime(moment).date())
 
 
 def local_midnight(day):

@@ -3,6 +3,7 @@ from decimal import Decimal
 from rest_framework import serializers
 from rest_framework.fields import empty
 
+from .alerts import ALERT_ACTIONS, DEFAULT_SNOOZE_HOURS, MAX_SNOOZE_HOURS
 from .models import FinanceAccount, FinanceBudget, FinanceTransaction, first_matching
 from .periods import PERIOD_ERROR, PERIOD_REGEX, current_period, end_of_today, period_label, shift_month
 from .transaction_filters import category_label
@@ -203,8 +204,22 @@ class BudgetCopySerializer(serializers.Serializer):
         return {**attrs, "source_month": source}
 
 
-class ActionSerializer(serializers.Serializer):
-    action = serializers.CharField(max_length=80)
-    amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True)
-    target_category = serializers.CharField(required=False, allow_blank=True)
-    source_category = serializers.CharField(required=False, allow_blank=True)
+class SnoozeHoursField(serializers.IntegerField):
+    def __init__(self, **kwargs):
+        super().__init__(min_value=1, max_value=MAX_SNOOZE_HOURS, default=DEFAULT_SNOOZE_HOURS, **kwargs)
+
+
+class AlertListQuerySerializer(serializers.Serializer):
+    estado = serializers.ChoiceField(
+        choices=["activas", "todas"], default="activas", error_messages={"invalid_choice": "Usa estado=activas o estado=todas."}
+    )
+    tipo = serializers.CharField(allow_blank=True, default="", max_length=80)
+
+
+class AlertActionSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=sorted(ALERT_ACTIONS), error_messages={"invalid_choice": "Acción de alerta no válida."})
+    hours = SnoozeHoursField()
+
+
+class SnoozeAllSerializer(serializers.Serializer):
+    hours = SnoozeHoursField()

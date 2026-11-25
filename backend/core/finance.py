@@ -14,8 +14,10 @@ from django.db.models.functions import TruncMonth
 from django.utils import timezone
 
 from . import analytics
+from .alert_service import dashboard_alerts
+from .alerts import BudgetUsage, budget_insight
 from .budgets import STATES, budget_detail, budget_state, projected_spending, usage_percentage
-from .models import FinanceAccount, FinanceAlert, FinanceBudget, FinanceTransaction
+from .models import FinanceAccount, FinanceBudget, FinanceTransaction
 from .periods import days_remaining, period_label, period_of, short_date, year_bounds
 from .transaction_filters import (
     daily_totals,
@@ -42,9 +44,6 @@ CATEGORY_ICONS = {
     "salud": "health", "entretenimiento": "gamepad", "salario": "briefcase", "honorarios": "briefcase",
 }
 KIND_ICONS = {Kind.TRANSFER: "transfer", Kind.DEPOSIT: "income", Kind.OPENING: "income", Kind.ADJUSTMENT: "adjust"}
-ALERT_CATEGORIES = ("Presupuesto", "Gastos Inusuales", "Vencimientos", "Metas")
-DASHBOARD_ALERT_TYPES = {"rojo": "danger", "amber": "warning", "indigo": "info", "green": "info"}
-NEUTRAL_INSIGHT = {"titulo": "", "resumen": "", "sugerencia": ""}
 
 
 # --- Movimientos -----------------------------------------------------------
@@ -192,6 +191,12 @@ def spent_for(budget):
     return spent_by_category(budget.owner_id, budget.month).get(normalize_text(budget.category), ZERO)
 
 
+def insight_for(items, user, month, today):
+    """Sugerencia calculada por reglas (``alerts.budget_insight``) a partir de los presupuestos ya serializados."""
+    usages = [BudgetUsage(item["id"], item["categoria"], month, item["presupuesto"], item["gastado"]) for item in items]
+    return budget_insight(usages, month, today, getattr(user, "currency", "PEN"))
+
+
 def budgets_payload(user, month, today):
     items = budget_items(user, month, today)
     spent = sum((item["gastado"] for item in items), ZERO)
@@ -206,13 +211,13 @@ def budgets_payload(user, month, today):
             "proyeccion": sum((item["proyeccion"] for item in items), ZERO),
             "dias_restantes": days_remaining(month, today),
         },
-        "ia_alert": dict(NEUTRAL_INSIGHT),
+        "ia_alert": insight_for(items, user, month, today),
         "filtros": [f"Todos {len(items)}", *(f"{state.name} {sum(item['estado'] == state.name for item in items)}" for state in STATES)],
         "categorias": items,
     }
 
 
-# --- Cuentas y alertas -----------------------------------------------------
+# --- Cuentas ---------------------------------------------------------------
 
 def serialize_account(account):
     return {
@@ -236,43 +241,6 @@ def accounts_payload(user):
     return {"patrimonio": total, "liquidez": total - cash, "efectivo": cash, "cuentas": items, "accounts": items}
 
 
-def serialize_alert(alert):
-    return {
-        "id": alert.id,
-        "tipo": alert.category,
-        "titulo": alert.title,
-        "descripcion": alert.description,
-        "nivel": alert.level,
-        "tiempo": "Ahora" if not alert.is_read else "Leída",
-        "porcentaje": alert.percentage,
-        "badge": alert.action_label.upper() if alert.action_label else alert.category.upper(),
-        "leida": alert.is_read,
-        "descartada": alert.dismissed,
-    }
-
-
-def alerts_payload(user, category=None):
-    alerts = FinanceAlert.objects.filter(owner=user, dismissed=False)
-    counts = dict(alerts.values_list("category").annotate(total=Count("id")))
-    filters = [f"Todas ({sum(counts.values())})", *(f"{name} ({counts.get(name, 0)})" for name in ALERT_CATEGORIES)]
-    shown = alerts.filter(category=category) if category else alerts
-    return {"filters": filters, "items": [serialize_alert(alert) for alert in shown]}
-
-
-def dashboard_alerts(user):
-    return [
-        {
-            "id": alert.id,
-            "tipo": DASHBOARD_ALERT_TYPES.get(alert.level, "info"),
-            "titulo": alert.title,
-            "tiempo": "Leída" if alert.is_read else "Activa",
-            "descripcion": alert.description,
-            "accion": alert.action_label,
-        }
-        for alert in FinanceAlert.objects.filter(owner=user, dismissed=False)
-    ]
-
-
 # --- Dashboard y catálogos -------------------------------------------------
 
 def dashboard_payload(user, month, today):
@@ -281,6 +249,7 @@ def dashboard_payload(user, month, today):
     limit = sum((item["presupuesto"] for item in budgets), ZERO)
     spent = sum((item["gastado"] for item in budgets), ZERO)
     recent = FinanceTransaction.objects.filter(owner=user).in_period(month).select_related("account")[:4]
+    alerts, pending = dashboard_alerts(user)
     return {
         "mes": month,
         "balance_total": balance,
@@ -289,7 +258,8 @@ def dashboard_payload(user, month, today):
         "presupuesto_limite": limit,
         "presupuesto_consumido": spent,
         "presupuesto_restante": limit - spent,
-        "alertas_activas": dashboard_alerts(user),
+        "alertas_activas": alerts,
+        "alertas_pendientes": pending,
         "ultimas_transacciones": [serialize_transaction(movement) for movement in recent],
     }
 

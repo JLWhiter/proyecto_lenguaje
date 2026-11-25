@@ -1,4 +1,4 @@
-"""Prueba la migración de datos 0005 con filas creadas como en la versión anterior."""
+"""Prueba las migraciones de datos (0005 y 0008) con filas creadas como en la versión anterior."""
 
 from datetime import timedelta
 from decimal import Decimal
@@ -13,7 +13,7 @@ BEFORE = [("core", "0003_financeprofile")]
 AFTER = [("core", "0006_computed_budgets_and_constraints")]
 
 
-class LegacyDataMigrationTests(TransactionTestCase):
+class MigrationTestCase(TransactionTestCase):
     def migrate(self, target):
         executor = MigrationExecutor(connection)
         executor.loader.build_graph()
@@ -23,6 +23,8 @@ class LegacyDataMigrationTests(TransactionTestCase):
     def tearDown(self):
         self.migrate(MigrationExecutor(connection).loader.graph.leaf_nodes())
 
+
+class LegacyDataMigrationTests(MigrationTestCase):
     def test_legacy_rows_are_classified_linked_and_reconciled(self):
         user = get_user_model().objects.create_user(email="legacy@example.com", full_name="Legacy", password="Finova#2026")
         apps = self.migrate(BEFORE)
@@ -63,3 +65,25 @@ class LegacyDataMigrationTests(TransactionTestCase):
             movements = Transaction.objects.filter(account=account)
             total = sum((m.amount if m.transaction_type == "INGRESO" else -m.amount for m in movements), Decimal("0"))
             self.assertEqual(account.balance, total, account.name)
+
+
+class AlertLevelMigrationTests(MigrationTestCase):
+    """Migración 0008: los niveles antiguos (colores) pasan a info|warning|danger|success."""
+
+    def test_legacy_levels_are_normalized(self):
+        user = get_user_model().objects.create_user(email="alertas@example.com", full_name="Alertas", password="Finova#2026")
+        apps = self.migrate([("core", "0006_computed_budgets_and_constraints")])
+        Alert = apps.get_model("core", "FinanceAlert")
+        legacy = ("rojo", "red", "amber", "indigo", "green", "morado")
+        for level in legacy:
+            Alert.objects.create(owner_id=user.pk, category="Metas", title=level, description="x", level=level)
+
+        apps = self.migrate([("core", "0008_normalize_alert_levels")])
+        Alert = apps.get_model("core", "FinanceAlert")
+
+        rows = {row["title"]: row for row in Alert.objects.values("title", "level", "severity", "rule", "dedupe_key")}
+        self.assertEqual(
+            {title: (rows[title]["level"], rows[title]["severity"]) for title in legacy},
+            {"rojo": ("danger", 3), "red": ("danger", 3), "amber": ("warning", 2), "indigo": ("info", 1), "green": ("success", 0), "morado": ("info", 1)},
+        )
+        self.assertEqual({(row["rule"], row["dedupe_key"]) for row in rows.values()}, {("other", None)})

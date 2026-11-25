@@ -6,7 +6,7 @@ from django.core.management import CommandError, call_command
 from django.test import TestCase
 from django.utils import timezone
 
-from .models import FinanceAccount, FinanceBudget, FinanceTransaction
+from .models import AlertEvaluation, FinanceAccount, FinanceAlert, FinanceBudget, FinanceTransaction
 from .periods import current_period, shift_month
 
 Kind = FinanceTransaction.Kind
@@ -36,6 +36,8 @@ class SeedDemoTests(TestCase):
         first = timezone.localtime(movements.earliest("occurred_at").occurred_at)
         self.assertEqual(first.strftime("%Y-%m"), shift_month(current_period(), -5))
         self.assertEqual(FinanceBudget.objects.filter(owner=user, month=current_period()).count(), 6)
+        self.assertTrue(AlertEvaluation.objects.filter(owner=user, period=current_period()).exists())
+        self.assertFalse(FinanceAlert.objects.filter(owner=user, rule=FinanceAlert.Rule.OTHER).exists())
 
     def test_existing_data_requires_reset(self):
         user = seed()

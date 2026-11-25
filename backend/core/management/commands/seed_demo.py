@@ -4,7 +4,8 @@
 
 Genera 3 cuentas y 6 meses de movimientos típicos de un trabajador en Lima
 (sueldo, alquiler, comida, transporte, servicios, transferencias entre
-cuentas y un depósito) hasta hoy, más presupuestos para el mes actual.
+cuentas y un depósito) hasta hoy, más presupuestos para el mes actual, y al
+final evalúa el motor de alertas para que el usuario tenga alertas reales.
 Todo pasa por los mismos métodos de dominio que usa la API
 (``FinanceAccount.open``, ``deposit``, ``withdraw``, ``transfer_to``), así los
 saldos siempre son la suma de los movimientos. Los montos variables salen de
@@ -22,8 +23,9 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
+from core.alert_service import refresh_alerts
 from core.exceptions import SaldoInsuficienteError
-from core.models import FinanceAccount, FinanceAlert, FinanceBudget, FinanceTransaction
+from core.models import AlertEvaluation, FinanceAccount, FinanceAlert, FinanceBudget, FinanceTransaction
 from core.periods import current_period, days_in_period, parse_period, period_label, shift_month
 
 DEFAULT_EMAIL = "demo@finova.local"
@@ -69,11 +71,15 @@ ONE_OFF = (
     (3, 14, 12, "deposit", "bcp", "500.00", "Depósito de ahorro familiar", ""),
     (4, 22, 17, "expense", "bcp", "179.90", "Saga Falabella - ropa", "Ropa"),
     (4, 25, 10, "income", "bcp", "850.00", "Proyecto freelance - landing page", "Honorarios"),
+    (5, 12, 20, "expense", "yape", "95.00", "Concierto - Teleticket", "Entretenimiento"),
 )
 
+# Presupuestos del mes actual para los gastos variables. El alquiler no tiene
+# presupuesto: es un pago fijo a inicio de mes y la proyección lineal lo
+# extrapolaría como si se fuera a pagar otra vez.
 BUDGETS = (
     ("Alimentación", "Supermercado, mercado y delivery", "900.00", "shopping"),
-    ("Vivienda", "Alquiler del departamento", "1300.00", "home"),
+    ("Ropa", "Ropa y calzado", "200.00", "shopping"),
     ("Transporte", "Taxis por aplicativo y Metropolitano", "250.00", "car"),
     ("Servicios", "Luz, agua, internet y celular", "300.00", "home"),
     ("Entretenimiento", "Streaming, cine y salidas", "120.00", "gamepad"),
@@ -153,7 +159,7 @@ def has_finance_data(user):
 
 
 def clear_finance_data(user):
-    for model in (FinanceTransaction, FinanceBudget, FinanceAccount, FinanceAlert):
+    for model in (FinanceAlert, AlertEvaluation, FinanceTransaction, FinanceBudget, FinanceAccount):
         model.objects.filter(owner=user).delete()
 
 
@@ -178,12 +184,14 @@ class Command(BaseCommand):
             FinanceBudget(owner=user, month=months[-1], category=category, description=description, limit_amount=Decimal(limit), icon=icon)
             for category, description, limit, icon in BUDGETS
         )
+        refresh_alerts(user, months)
         shown_password = (password or DEFAULT_PASSWORD) if created else (password or "(sin cambios)")
         movements = FinanceTransaction.objects.filter(owner=user).count()
+        alerts = FinanceAlert.objects.filter(owner=user).count()
         self.stdout.write(self.style.SUCCESS(
             f"Usuario demo listo: {email} / contraseña: {shown_password}\n"
-            f"{movements} movimientos en {len(accounts)} cuentas desde {period_label(months[0])} "
-            f"y {len(BUDGETS)} presupuestos para {period_label(months[-1])}."
+            f"{movements} movimientos en {len(accounts)} cuentas desde {period_label(months[0])}, "
+            f"{len(BUDGETS)} presupuestos para {period_label(months[-1])} y {alerts} alertas."
         ))
 
     def demo_user(self, email, password, reset):

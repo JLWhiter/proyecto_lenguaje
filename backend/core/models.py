@@ -9,6 +9,7 @@ from django.db.models import F, Q
 from django.db.models.functions import Lower, Round
 from django.utils import timezone
 
+from .alerts import AlertLevel, AlertRule
 from .exceptions import OperacionNoPermitidaError, SaldoInsuficienteError
 from .periods import PERIOD_ERROR, PERIOD_REGEX, current_period, period_bounds
 from .transaction_filters import normalize_text
@@ -380,21 +381,72 @@ class FinanceBudget(models.Model):
         target.refresh_from_db(fields=["limit_amount", "updated_at"])
 
 
+def active_alert(now):
+    """Condición de alerta visible: no descartada y sin posponer (o con la posposición ya vencida)."""
+    return Q(dismissed=False) & (Q(snoozed_until__isnull=True) | Q(snoozed_until__lte=now))
+
+
+class FinanceAlertQuerySet(models.QuerySet):
+    def active(self, now=None):
+        return self.filter(active_alert(now or timezone.now()))
+
+
 class FinanceAlert(models.Model):
+    """Aviso para el usuario generado por el motor de alertas (``core.alerts``).
+
+    Cada alerta generada tiene una ``dedupe_key`` única por usuario (por ejemplo
+    ``budget_threshold:12``): al reevaluar, la alerta existente se actualiza o
+    escala en lugar de duplicarse, y se elimina si la condición desaparece.
+    ``severity`` ordena las alertas y detecta escaladas (un presupuesto excedido
+    es más grave que uno al 95 %, aunque ambos tengan nivel ``danger``).
+    Las alertas sin ``dedupe_key`` (``rule=other``) no las toca el motor.
+    """
+
+    Rule = AlertRule
+    Level = AlertLevel
+
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="finance_alerts")
-    category = models.CharField(max_length=80, blank=True)
+    rule = models.CharField(max_length=32, choices=AlertRule.choices, default=AlertRule.OTHER)
+    level = models.CharField(max_length=16, choices=AlertLevel.choices, default=AlertLevel.INFO)
+    severity = models.PositiveSmallIntegerField(default=1)
+    period = models.CharField(max_length=7, blank=True)
+    budget = models.ForeignKey(FinanceBudget, null=True, blank=True, on_delete=models.CASCADE, related_name="alerts")
+    transaction = models.ForeignKey(FinanceTransaction, null=True, blank=True, on_delete=models.CASCADE, related_name="alerts")
+    dedupe_key = models.CharField(max_length=80, null=True, blank=True)
     title = models.CharField(max_length=160)
     description = models.TextField()
-    level = models.CharField(max_length=16, default="green")
     action_label = models.CharField(max_length=80, blank=True)
+    action = models.JSONField(default=dict, blank=True)
     percentage = models.FloatField(null=True, blank=True)
     is_read = models.BooleanField(default=False)
     dismissed = models.BooleanField(default=False)
     snoozed_until = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
 
+    objects = FinanceAlertQuerySet.as_manager()
+
     class Meta:
-        ordering = ["-created_at", "-id"]
+        ordering = ["-severity", "-created_at", "id"]
+        indexes = [models.Index(fields=["owner", "period"], name="finance_alert_owner_period_idx")]
+        constraints = [models.UniqueConstraint(fields=["owner", "dedupe_key"], name="unique_finance_alert_key_per_owner")]
 
     def __str__(self):
         return self.title
+
+
+class AlertEvaluation(models.Model):
+    """Última vez que el motor de alertas evaluó un mes de un usuario.
+
+    Permite evaluar de forma perezosa (al abrir el dashboard o las alertas)
+    solo si el mes no se evaluó hoy, o si cerró después de su última evaluación.
+    """
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="alert_evaluations")
+    period = models.CharField(max_length=7)
+    evaluated_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["owner", "period"], name="unique_alert_evaluation_per_period")]
+
+    def __str__(self):
+        return f"{self.period} ({self.owner_id})"

@@ -4,6 +4,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient
 
+from .alerts import AlertRule
 from .models import FinanceAlert, FinanceBudget
 from .periods import current_period, local_today, period_label
 from .testing import API, FinanceAPITestCase, local_datetime
@@ -35,7 +36,8 @@ class ZeroStateTests(FinanceAPITestCase):
         self.assertEqual((transactions.data["count"], transactions.data["pages"]), (0, 1))
         self.assertEqual(budgets.data["mes"], current_period())
         self.assertEqual(budgets.data["categorias"], [])
-        self.assertEqual(budgets.data["ia_alert"], {"titulo": "", "resumen": "", "sugerencia": ""})
+        self.assertEqual(budgets.data["ia_alert"], {"titulo": "", "resumen": "", "sugerencia": "", "nivel": "", "accion": None})
+        self.assertEqual(dashboard.data["alertas_activas"], [])
         self.assertEqual(accounts.data["accounts"], [])
         self.assertEqual(accounts.data["patrimonio"], Decimal("0.00"))
         self.assertEqual(alerts.data["items"], [])
@@ -158,7 +160,7 @@ class IncomeTaxTests(FinanceAPITestCase):
 
 class AlertTests(FinanceAPITestCase):
     def test_dismissed_alert_is_not_returned(self):
-        alert = FinanceAlert.objects.create(owner=self.user, title="Aviso", description="Detalle", category="Metas")
+        alert = FinanceAlert.objects.create(owner=self.user, title="Aviso", description="Detalle")
 
         response = self.client.post(f"{API}/alertas/{alert.id}/accion/", {"action": "dismiss"}, format="json")
 
@@ -166,14 +168,19 @@ class AlertTests(FinanceAPITestCase):
         self.assertEqual(self.client.get(f"{API}/alertas/").data["items"], [])
 
     def test_filters_are_counted_with_a_constant_number_of_queries(self):
-        for category in ("Metas", "Metas", "Presupuesto"):
-            FinanceAlert.objects.create(owner=self.user, title="Aviso", description="Detalle", category=category)
+        rules = (AlertRule.ATYPICAL_EXPENSE, AlertRule.ATYPICAL_EXPENSE, AlertRule.BUDGET_THRESHOLD)
+        for index, rule in enumerate(rules):
+            FinanceAlert.objects.create(owner=self.user, title="Aviso", description="Detalle", rule=rule, dedupe_key=f"manual:{index}")
+        self.client.get(f"{API}/alertas/")  # primera visita: evalúa el mes una vez
 
         with CaptureQueriesContext(connection) as queries:
             response = self.client.get(f"{API}/alertas/")
 
-        self.assertEqual(response.data["filters"], ["Todas (3)", "Presupuesto (1)", "Gastos Inusuales (0)", "Vencimientos (0)", "Metas (2)"])
-        self.assertLessEqual(len(queries), 2)
+        self.assertEqual(
+            response.data["filters"],
+            ["Todas (3)", "Presupuesto (1)", "Ritmo de gasto (0)", "Gasto inusual (2)", "Balance mensual (0)"],
+        )
+        self.assertLessEqual(len(queries), 3)
 
 
 class PeriodCatalogTests(FinanceAPITestCase):

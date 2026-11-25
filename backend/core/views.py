@@ -1,3 +1,5 @@
+import logging
+
 from django.http import JsonResponse
 from django.utils import timezone
 from rest_framework import status
@@ -6,18 +8,18 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .alert_service import alerts_payload, apply_alert_action, ensure_alerts, refresh_alerts, serialize_alert, snooze_all
+from .alerts import hours_text
 from .csv_export import movements_csv
 from .exceptions import FinanceError
 from .finance import (
     accounts_payload,
-    alerts_payload,
     available_periods,
     budgets_payload,
     category_catalog,
     dashboard_payload,
     filtered_movements,
     serialize_account,
-    serialize_alert,
     serialize_budgets,
     serialize_transaction,
     spent_for,
@@ -25,13 +27,14 @@ from .finance import (
     transactions_payload,
 )
 from .models import FinanceAccount, FinanceAlert, FinanceBudget, FinanceTransaction
-from .periods import local_today, period_label
+from .periods import local_today, period_label, period_of_moment
 from .renderers import CSVRenderer
 from .serializers import (
     AccountBalanceSerializer,
     AccountCreateSerializer,
     AccountSerializer,
-    ActionSerializer,
+    AlertActionSerializer,
+    AlertListQuerySerializer,
     BudgetAdjustSerializer,
     BudgetCopySerializer,
     BudgetCreateSerializer,
@@ -40,6 +43,7 @@ from .serializers import (
     DepositSerializer,
     IncomeTaxQuerySerializer,
     PeriodQuerySerializer,
+    SnoozeAllSerializer,
     TransactionCreateSerializer,
     TransactionFilterSerializer,
     TransactionListQuerySerializer,
@@ -47,6 +51,8 @@ from .serializers import (
     TransferSerializer,
 )
 from .taxes import income_tax, uit_for_year
+
+logger = logging.getLogger(__name__)
 
 
 def health(request):
@@ -88,10 +94,23 @@ class FinanceAPIView(APIView):
             raise NotFound(message)
         return record
 
+    def refresh_alerts(self, *changes):
+        """Reevalúa las alertas de los meses que tocó una operación ya realizada.
+
+        ``changes`` son movimientos o períodos 'AAAA-MM'. Si el motor de alertas
+        falla, la operación (ya guardada) no responde error: solo se registra.
+        """
+        periods = {change if isinstance(change, str) else period_of_moment(change.occurred_at) for change in changes if change}
+        try:
+            refresh_alerts(self.request.user, periods)
+        except Exception:
+            logger.exception("No se pudieron actualizar las alertas de %s", sorted(periods))
+
 
 class DashboardResumenView(FinanceAPIView):
     def get(self, request):
         month = self.validated(PeriodQuerySerializer, request.query_params)["mes"]
+        ensure_alerts(request.user, month)
         return Response(dashboard_payload(request.user, month, local_today()))
 
 
@@ -111,6 +130,7 @@ class TransactionListView(FinanceAPIView):
             kind=FinanceTransaction.Kind.REGULAR,
             occurred_at=values.get("occurred_at"),
         )
+        self.refresh_alerts(movement)
         return success("Transacción registrada.", serialize_transaction(movement), status.HTTP_201_CREATED)
 
 
@@ -118,11 +138,15 @@ class TransactionDetailView(FinanceAPIView):
     def patch(self, request, pk):
         movement = self.owned(FinanceTransaction.objects, pk, "Movimiento no encontrado.")
         values = dict(self.validated(TransactionUpdateSerializer, request.data))
+        previous_period = period_of_moment(movement.occurred_at)
         movement.edit(account=values.pop("account", None), **values)
+        self.refresh_alerts(previous_period, movement)
         return success("Movimiento actualizado.", serialize_transaction(movement))
 
     def delete(self, request, pk):
-        self.owned(FinanceTransaction.objects, pk, "Movimiento no encontrado.").cancel()
+        movement = self.owned(FinanceTransaction.objects, pk, "Movimiento no encontrado.")
+        movement.cancel()
+        self.refresh_alerts(movement)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -132,6 +156,7 @@ class TransferView(FinanceAPIView):
         legs = values["source"].transfer_to(
             values["destination"], values["amount"], description=values["description"], occurred_at=values.get("occurred_at")
         )
+        self.refresh_alerts(*legs)
         movements = [serialize_transaction(leg) for leg in legs]
         return success("Transferencia realizada.", movements[0], status.HTTP_201_CREATED, movimientos=movements)
 
@@ -142,6 +167,7 @@ class DepositView(FinanceAPIView):
         movement = values["account"].deposit(
             values["amount"], name=values["description"] or "Depósito", occurred_at=values.get("occurred_at")
         )
+        self.refresh_alerts(movement)
         return success("Depósito realizado.", serialize_transaction(movement), status.HTTP_201_CREATED)
 
 
@@ -165,6 +191,7 @@ class BudgetListView(FinanceAPIView):
     def post(self, request):
         values = self.validated(BudgetCreateSerializer, request.data)
         budget = FinanceBudget.objects.create(owner=request.user, **values)
+        self.refresh_alerts(budget.month)
         return success("Presupuesto creado.", budget_item(budget), status.HTTP_201_CREATED)
 
 
@@ -177,10 +204,13 @@ class BudgetDetailView(FinanceAPIView):
         for field, value in values.items():
             setattr(budget, field, value)
         budget.save()
+        self.refresh_alerts(budget.month)
         return success("Presupuesto actualizado.", budget_item(budget))
 
     def delete(self, request, pk):
-        self.owned(FinanceBudget.objects, pk, "Presupuesto no encontrado.").delete()
+        budget = self.owned(FinanceBudget.objects, pk, "Presupuesto no encontrado.")
+        budget.delete()
+        self.refresh_alerts(budget.month)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -194,6 +224,7 @@ class BudgetCopyView(FinanceAPIView):
     def post(self, request):
         values = self.validated(BudgetCopySerializer, request.data)
         created, skipped = FinanceBudget.copy_month(request.user, values["source_month"], values["month"])
+        self.refresh_alerts(values["month"])
         return success(
             copied_message(len(created), values["source_month"]),
             serialize_budgets(created, request.user, values["month"], local_today()),
@@ -207,6 +238,7 @@ class RebalanceBudgetView(FinanceAPIView):
         values = self.validated(BudgetRebalanceSerializer, request.data)
         source, target, amount = values["source"], values["target"], values["amount"]
         source.move_limit_to(target, amount, spent=spent_for(source))
+        self.refresh_alerts(values["month"])
         return success(
             "Presupuesto rebalanceado.",
             serialize_budgets([source, target], request.user, values["month"], local_today()),
@@ -255,6 +287,7 @@ class AccountBalanceUpdateView(FinanceAPIView):
         account = self.owned(active_accounts(), pk, "Cuenta no encontrada.")
         values = self.validated(AccountBalanceSerializer, request.data)
         movement = account.adjust_balance(values["balance"])
+        self.refresh_alerts(movement)
         return success(
             "Saldo actualizado.",
             serialize_account(account),
@@ -273,33 +306,41 @@ class CategoryListView(FinanceAPIView):
 
 
 class AlertListView(FinanceAPIView):
+    """``GET /alertas/?estado=activas|todas&tipo=<regla, etiqueta o nivel>``.
+
+    Antes de responder evalúa (si hace falta) el mes en curso y el anterior.
+    """
+
     def get(self, request):
-        return Response(alerts_payload(request.user, request.query_params.get("tipo")))
+        params = self.validated(AlertListQuerySerializer, request.query_params)
+        ensure_alerts(request.user)
+        return Response(alerts_payload(request.user, params["estado"], params["tipo"], timezone.now()))
 
 
 class AlertActionView(FinanceAPIView):
+    """``POST /alertas/<id>/accion/`` con ``action``: read | unread | dismiss | snooze (``hours``, 24 por defecto) | restore."""
+
     def post(self, request, pk):
-        values = self.validated(ActionSerializer, request.data)
         alert = self.owned(FinanceAlert.objects, pk, "Alerta no encontrada.")
-        action = values["action"]
-        if action in {"read", "mark_read", "confirm", "confirm_fraud", "pay", "reassign"}:
-            alert.is_read = True
-        elif action in {"dismiss", "discard"}:
-            alert.dismissed = True
-            alert.is_read = True
-        elif action in {"snooze", "postpone"}:
-            alert.snoozed_until = timezone.now() + timezone.timedelta(hours=24)
-            alert.is_read = True
-        else:
-            return Response({"action": ["Acción de alerta no válida."]}, status=status.HTTP_400_BAD_REQUEST)
-        alert.save(update_fields=["is_read", "dismissed", "snoozed_until"])
-        return success("Acción aplicada.", serialize_alert(alert))
+        values = self.validated(AlertActionSerializer, request.data)
+        now = timezone.now()
+        message = apply_alert_action(alert, values["action"], hours=values["hours"], now=now)
+        return success(message, serialize_alert(alert, now))
 
 
 class SilenceAlertsView(FinanceAPIView):
+    """Pospone todas las alertas activas (24 h por defecto). No las descarta: vuelven a aparecer después."""
+
     def post(self, request):
-        FinanceAlert.objects.filter(owner=request.user, dismissed=False).update(dismissed=True, is_read=True)
-        return Response({"success": True, "message": "Todas las alertas fueron silenciadas."})
+        hours = self.validated(SnoozeAllSerializer, request.data)["hours"]
+        count, until = snooze_all(request.user, hours=hours)
+        if count == 0:
+            message = "No tienes alertas activas para silenciar."
+        elif count == 1:
+            message = f"Se silenció 1 alerta por {hours_text(hours)}."
+        else:
+            message = f"Se silenciaron {count} alertas por {hours_text(hours)}."
+        return success(message, pospuestas=count, pospuesta_hasta=timezone.localtime(until).isoformat(timespec="seconds"))
 
 
 class IncomeTaxView(FinanceAPIView):
