@@ -5,16 +5,17 @@ import AuthCard from '../components/auth/AuthCard'
 import AuthInput from '../components/auth/AuthInput'
 import PrimaryButton from '../components/auth/PrimaryButton'
 import Alert from '../components/auth/Alert'
+import { feedbackFromError } from '../components/auth/feedback'
 import { ArrowLeftIcon, MailIcon } from '../components/icons'
 import { authService } from '../services/authService'
-import { fieldErrorsFromApi, messageFromApi } from '../lib/api'
+import { fieldErrorsFromApi } from '../lib/api'
 import { isValidEmail } from '../lib/validation'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
   const [touched, setTouched] = useState(false)
   const [fieldError, setFieldError] = useState('')
-  const [serverError, setServerError] = useState('')
+  const [serverError, setServerError] = useState(null)
   const [result, setResult] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -26,7 +27,7 @@ export default function ForgotPasswordPage() {
     if (!emailValid) return
 
     setSubmitting(true)
-    setServerError('')
+    setServerError(null)
     setFieldError('')
     setResult(null)
 
@@ -37,7 +38,7 @@ export default function ForgotPasswordPage() {
       const fields = fieldErrorsFromApi(error)
       setFieldError(fields.email || '')
       if (Object.keys(fields).length === 0) {
-        setServerError(messageFromApi(error, 'No pudimos iniciar la recuperación. Inténtalo de nuevo.'))
+        setServerError(feedbackFromError(error, 'No pudimos iniciar la recuperación. Inténtalo de nuevo.'))
       }
     } finally {
       setSubmitting(false)
@@ -58,7 +59,7 @@ export default function ForgotPasswordPage() {
         <div className="my-auto w-full">
         <Link
           to="/login"
-          className="mb-6 inline-flex w-fit items-center gap-2 text-[12px] font-semibold text-[#64748B] transition hover:text-[#047857]"
+          className="mb-6 inline-flex min-h-10 w-fit items-center gap-2 text-[12px] font-semibold text-[#64748B] transition hover:text-[#047857]"
         >
           <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/80 bg-white/70 shadow-sm">
             <ArrowLeftIcon className="h-4 w-4" />
@@ -79,8 +80,8 @@ export default function ForgotPasswordPage() {
           </div>
 
           {serverError && (
-            <Alert tone="error" className="mb-5">
-              {serverError}
+            <Alert tone={serverError.tone} title={serverError.title} className="mb-5">
+              {serverError.message}
             </Alert>
           )}
 
@@ -112,7 +113,7 @@ export default function ForgotPasswordPage() {
               onChange={(event) => {
                 setEmail(event.target.value)
                 setFieldError('')
-                setServerError('')
+                setServerError(null)
               }}
               onBlur={() => setTouched(true)}
             />

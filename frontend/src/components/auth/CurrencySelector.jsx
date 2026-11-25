@@ -6,14 +6,23 @@ export const CURRENCIES = [
   { value: 'EUR', label: 'Euro (EUR - €)' },
 ]
 
-export default function CurrencySelector({ id = 'currency', value, onChange, error = '', ...props }) {
+export default function CurrencySelector({
+  id = 'currency',
+  value,
+  onChange,
+  error = '',
+  labelExtra = <span className="text-[11px] font-medium text-[#94A3B8]">Moneda de tu cuenta</span>,
+  hint = 'Se usará como moneda predeterminada de tu cuenta financiera.',
+  ...props
+}) {
+  const hintId = `${id}-hint`
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-3">
         <label htmlFor={id} className="text-[13px] font-semibold text-[#1F2937]">
           Moneda principal
         </label>
-        <span className="text-[11px] font-medium text-[#94A3B8]">Moneda de tu cuenta</span>
+        {labelExtra}
       </div>
 
       <div className="group relative">
@@ -25,8 +34,8 @@ export default function CurrencySelector({ id = 'currency', value, onChange, err
           value={value}
           onChange={onChange}
           aria-invalid={error ? 'true' : 'false'}
-          aria-describedby={error ? `${id}-error` : undefined}
-          className={`h-12 w-full appearance-none rounded-xl border bg-[#FBFDFC] pl-11 pr-11 text-[13px] text-[#1F2937] transition-all duration-200 focus:bg-white focus:outline-none focus:ring-4 sm:text-[14px] ${
+          aria-describedby={error ? `${id}-error` : hint ? hintId : undefined}
+          className={`h-12 w-full min-w-0 appearance-none truncate rounded-xl border bg-[#FBFDFC] pl-11 pr-11 text-base text-[#1F2937] transition-all duration-200 focus:bg-white focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60 sm:text-[14px] ${
             error
               ? 'border-red-300 focus:border-red-400 focus:ring-red-100'
               : 'border-[#E5E7EB] hover:border-[#C8D6D0] focus:border-[#10B981] focus:ring-[#10B981]/10'
@@ -48,11 +57,11 @@ export default function CurrencySelector({ id = 'currency', value, onChange, err
         <p id={`${id}-error`} role="alert" className="mt-2 text-[12px] font-medium text-[#DC5A5A]">
           {error}
         </p>
-      ) : (
-        <p className="mt-2 text-[12px] leading-relaxed text-[#64748B]">
-          Se usará como moneda predeterminada de tu cuenta financiera.
+      ) : hint ? (
+        <p id={hintId} className="mt-2 text-[12px] leading-relaxed text-[#64748B]">
+          {hint}
         </p>
-      )}
+      ) : null}
     </div>
   )
 }

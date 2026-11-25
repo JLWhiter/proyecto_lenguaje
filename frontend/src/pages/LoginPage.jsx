@@ -1,16 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import Brand from '../components/auth/Brand'
 import AuthCard from '../components/auth/AuthCard'
 import AuthInput from '../components/auth/AuthInput'
 import PasswordInput from '../components/auth/PasswordInput'
 import PrimaryButton from '../components/auth/PrimaryButton'
-import Divider, { SecurityFooter } from '../components/auth/SecurityFooter'
-import SocialAuthButtons from '../components/auth/SocialAuthButtons'
+import { SecurityFooter } from '../components/auth/SecurityFooter'
 import Alert from '../components/auth/Alert'
-import { ArrowRightIcon, FingerprintIcon, InfoIcon, MailIcon } from '../components/icons'
+import { feedbackFromError } from '../components/auth/feedback'
+import { clearLoginNotice, peekLoginNotice } from '../components/auth/loginNotice'
+import { ArrowRightIcon, MailIcon } from '../components/icons'
 import { useAuth } from '../context/AuthContext'
-import { fieldErrorsFromApi, messageFromApi } from '../lib/api'
+import { fieldErrorsFromApi } from '../lib/api'
 import { isValidEmail } from '../lib/validation'
 
 export default function LoginPage() {
@@ -19,13 +20,18 @@ export default function LoginPage() {
   const location = useLocation()
   const redirectTo = location.state?.from || '/app'
   const sessionExpired = location.state?.reason === 'expired'
+  // Aviso de otra pantalla: "Cerraste sesión en todos tus dispositivos." (loginNotice) o
+  // "Tu correo quedó verificado…" (location.state.notice).
+  const [flashNotice] = useState(peekLoginNotice)
+  useEffect(() => clearLoginNotice(), [])
+  const notice = flashNotice || (typeof location.state?.notice === 'string' ? location.state.notice : '')
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
   const [touched, setTouched] = useState({ email: false, password: false })
   const [fieldErrors, setFieldErrors] = useState({})
-  const [serverError, setServerError] = useState('')
+  const [serverError, setServerError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
   const emailValid = isValidEmail(email)
@@ -51,7 +57,7 @@ export default function LoginPage() {
       delete next[field]
       return next
     })
-    setServerError('')
+    setServerError(null)
   }
 
   async function handleSubmit(event) {
@@ -60,17 +66,19 @@ export default function LoginPage() {
     if (!formValid) return
 
     setSubmitting(true)
-    setServerError('')
+    setServerError(null)
     setFieldErrors({})
 
     try {
-      await login({ email: email.trim(), password, rememberMe })
-      navigate(redirectTo, { replace: true })
+      await login(
+        { email: email.trim(), password, rememberMe },
+        { onSuccess: () => navigate(redirectTo, { replace: true }) },
+      )
     } catch (error) {
       const fields = fieldErrorsFromApi(error)
       setFieldErrors(fields)
       if (Object.keys(fields).length === 0) {
-        setServerError(messageFromApi(error, 'No pudimos iniciar sesión. Inténtalo de nuevo.'))
+        setServerError(feedbackFromError(error, 'No pudimos iniciar sesión. Inténtalo de nuevo.'))
       }
     } finally {
       setSubmitting(false)
@@ -106,9 +114,15 @@ export default function LoginPage() {
             </Alert>
           )}
 
+          {notice && !sessionExpired && !serverError && (
+            <Alert tone="success" className="mb-5">
+              {notice}
+            </Alert>
+          )}
+
           {serverError && (
-            <Alert tone="error" className="mb-5">
-              {serverError}
+            <Alert tone={serverError.tone} title={serverError.title} className="mb-5">
+              {serverError.message}
             </Alert>
           )}
 
@@ -118,7 +132,7 @@ export default function LoginPage() {
               name="email"
               type="email"
               label="Correo electrónico"
-              placeholder="carlos.mendoza@finova.pe"
+              placeholder="tu@correo.com"
               autoComplete="email"
               inputMode="email"
               icon={<MailIcon className="h-[18px] w-[18px]" />}
@@ -148,8 +162,8 @@ export default function LoginPage() {
               onBlur={() => setTouched((current) => ({ ...current, password: true }))}
             />
 
-            <div className="flex flex-col items-start justify-between gap-2 pt-0.5 sm:flex-row sm:items-center">
-              <label htmlFor="remember-me" className="flex cursor-pointer items-center gap-2 text-[11px] font-medium text-[#475569]">
+            <div className="flex flex-col items-start justify-between gap-0 sm:flex-row sm:items-center sm:gap-2">
+              <label htmlFor="remember-me" className="flex min-h-10 cursor-pointer items-center gap-2 text-[12px] font-medium text-[#475569]">
                 <input
                   id="remember-me"
                   name="remember-me"
@@ -163,7 +177,7 @@ export default function LoginPage() {
               </label>
               <Link
                 to="/recuperar-contrasena"
-                className="text-[11px] font-semibold text-[#047857] transition hover:text-[#10B981] hover:underline sm:ml-auto"
+                className="inline-flex min-h-10 items-center text-[12px] font-semibold text-[#047857] transition hover:text-[#10B981] hover:underline sm:ml-auto"
               >
                 ¿Olvidaste tu contraseña?
               </Link>
@@ -180,35 +194,11 @@ export default function LoginPage() {
             </PrimaryButton>
           </form>
 
-          <div className="mt-4">
-            <button
-              type="button"
-              disabled
-              aria-disabled="true"
-              title="WebAuthn aún no está configurado"
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#E5E7EB] bg-[#FBFDFC] text-[12.5px] font-semibold text-[#475569] opacity-70 disabled:cursor-not-allowed"
-            >
-              <FingerprintIcon className="h-[18px] w-[18px] text-[#059669]" />
-              Ingresar con Face ID o Huella
-            </button>
-            <p className="mt-2 flex items-start justify-center gap-1.5 text-center text-[10.5px] leading-relaxed text-[#94A3B8]">
-              <InfoIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              Próximamente. Requiere WebAuthn y credenciales del dispositivo; no se simula un acceso
-              biométrico.
-            </p>
-          </div>
-
-          <div className="my-5">
-            <Divider>o continúa con</Divider>
-          </div>
-
-          <SocialAuthButtons mode="login" />
-
-          <p className="mt-6 text-center text-[12.5px] text-[#64748B]">
+          <p className="mt-6 border-t border-[#E8EFEB] pt-5 text-center text-[12.5px] text-[#64748B]">
             ¿No tienes una cuenta?{' '}
             <Link
               to="/registro"
-              className="font-bold text-[#047857] transition hover:text-[#10B981] hover:underline"
+              className="inline-flex min-h-10 items-center font-bold text-[#047857] transition hover:text-[#10B981] hover:underline"
             >
               Regístrate gratis
             </Link>

@@ -16,7 +16,7 @@ export default function PasswordInput({ id = 'password', label = 'Contraseña', 
         <button
           type="button"
           onClick={() => setVisible((current) => !current)}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-[#94A3B8] transition hover:bg-[#F0F7F5] hover:text-[#047857] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]/40"
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-[#94A3B8] transition hover:bg-[#F0F7F5] hover:text-[#047857] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]/40"
           aria-label={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
           aria-pressed={visible}
         >

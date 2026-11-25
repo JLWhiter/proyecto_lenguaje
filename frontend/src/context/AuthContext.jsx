@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { setUnauthorizedHandler } from '../lib/api'
 import { authService } from '../services/authService'
 
@@ -46,19 +46,39 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const login = useCallback(async (credentials) => {
-    const data = await authService.login(credentials)
-    setSessionExpired(false)
-    setUser(data.user)
-    return data
+  /**
+   * Fija el usuario recién autenticado y ejecuta `onSuccess` (normalmente un `navigate`) en la MISMA
+   * transición. react-router aplica la navegación como transición: si el usuario se fijara antes y por
+   * separado, GuestRoute redirigiría a /app sin `state` y se perderían el destino (`from`) y avisos como
+   * `justRegistered`.
+   */
+  const startSession = useCallback((data, onSuccess) => {
+    startTransition(() => {
+      setSessionExpired(false)
+      setUser(data.user)
+      onSuccess?.(data)
+    })
   }, [])
 
-  const register = useCallback(async (payload) => {
-    const data = await authService.register(payload)
-    setSessionExpired(false)
-    setUser(data.user)
-    return data
-  }, [])
+  /** `await login(credentials, { onSuccess: () => navigate(destino) })` — `onSuccess` es opcional. */
+  const login = useCallback(
+    async (credentials, { onSuccess } = {}) => {
+      const data = await authService.login(credentials)
+      startSession(data, onSuccess)
+      return data
+    },
+    [startSession],
+  )
+
+  /** `await register(payload, { onSuccess: (data) => navigate('/app', { state }) })` — `onSuccess` es opcional. */
+  const register = useCallback(
+    async (payload, { onSuccess } = {}) => {
+      const data = await authService.register(payload)
+      startSession(data, onSuccess)
+      return data
+    },
+    [startSession],
+  )
 
   const logout = useCallback(async () => {
     try {
@@ -72,15 +92,42 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  /**
+   * Cierra la sesión en todos los dispositivos. A diferencia de `logout`, si el backend falla
+   * el error se propaga y la sesión local se mantiene (la acción no se completó).
+   */
+  const logoutAll = useCallback(async () => {
+    const data = await authService.logoutAll()
+    userRef.current = null
+    setSessionExpired(false)
+    setUser(null)
+    return data
+  }, [])
+
   const refreshUser = useCallback(async () => {
     const data = await authService.me()
     setUser(data)
     return data
   }, [])
 
+  /**
+   * Actualiza el usuario en memoria con datos que ya devolvió el backend (PATCH me/, cambio de
+   * contraseña, verificación…). El header, el menú y `useMoney()` se refrescan al instante.
+   * Acepta el usuario completo o un parcial (`{ email_verified: true }`). Sin sesión, o si `next.id`
+   * es de otro usuario (p. ej. un enlace de verificación ajeno), no hace nada.
+   */
+  const updateUser = useCallback((next) => {
+    if (!next || typeof next !== 'object') return
+    setUser((current) => {
+      if (!current) return current
+      if (next.id !== undefined && next.id !== current.id) return current
+      return { ...current, ...next }
+    })
+  }, [])
+
   const value = useMemo(
-    () => ({ user, checking, sessionExpired, login, register, logout, refreshUser }),
-    [user, checking, sessionExpired, login, register, logout, refreshUser],
+    () => ({ user, checking, sessionExpired, login, register, logout, logoutAll, refreshUser, updateUser }),
+    [user, checking, sessionExpired, login, register, logout, logoutAll, refreshUser, updateUser],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

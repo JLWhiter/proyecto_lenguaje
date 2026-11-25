@@ -1,8 +1,15 @@
 import { CheckIcon } from '../icons'
 import { passwordChecks } from '../../lib/validation'
 
+const LABELS = ['Muy débil', 'Débil', 'Aceptable', 'Segura']
+
 export default function PasswordStrength({ password }) {
-  const { minLength, hasNumberOrSymbol, strong, score, label } = passwordChecks(password)
+  const checks = passwordChecks(password)
+  const { minLength, hasNumberOrSymbol, strong } = checks
+  // Solo números ("12345678") cumple las reglas mínimas, pero el servidor la rechaza por común/numérica.
+  const onlyDigits = /^\d+$/.test(password)
+  const score = onlyDigits ? Math.min(checks.score, 1) : checks.score
+  const label = LABELS[score] ?? ''
   const visible = password.length > 0
 
   const barColor =
@@ -57,6 +64,7 @@ export default function PasswordStrength({ password }) {
             Buena longitud
           </span>
         )}
+        {onlyDigits && <span className="text-[#B45309]">Evita usar solo números</span>}
       </div>
     </div>
   )
