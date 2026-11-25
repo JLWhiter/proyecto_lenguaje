@@ -10,20 +10,23 @@ from django.db.models.functions import Lower, Round
 from django.utils import timezone
 
 from .alerts import AlertLevel, AlertRule
+from .categories import category_key
 from .exceptions import OperacionNoPermitidaError, SaldoInsuficienteError
 from .money import money
 from .periods import PERIOD_ERROR, PERIOD_REGEX, current_period, period_bounds
 from .transaction_filters import normalize_text
 
 
-def first_matching(records, field, value):
-    """Primer registro cuyo ``field`` coincide con ``value`` sin importar mayúsculas ni espacios.
+def first_matching(records, field, value, key=normalize_text):
+    """Primer registro cuyo ``field`` tiene la misma clave que ``value``.
 
-    La comparación se hace en Python porque ``LOWER``/``iexact`` de SQLite solo
-    entienden letras ASCII ('ALIMENTACIÓN' no coincidiría con 'alimentación').
+    Por defecto compara sin importar mayúsculas ni espacios; las categorías usan
+    ``key=category_key`` (además, sin importar tildes). La comparación se hace en
+    Python porque ``LOWER``/``iexact`` de SQLite solo entienden letras ASCII
+    ('ALIMENTACIÓN' no coincidiría con 'alimentación').
     """
-    target = normalize_text(value)
-    return next((record for record in records if normalize_text(getattr(record, field)) == target), None)
+    target = key(value)
+    return next((record for record in records if key(getattr(record, field)) == target), None)
 
 
 class MovementType(models.TextChoices):
@@ -356,15 +359,15 @@ class FinanceBudget(models.Model):
     def copy_month(cls, owner, source, target):
         """Copia los presupuestos del mes ``source`` al mes ``target``.
 
-        Omite las categorías que ya tienen presupuesto en ``target``.
+        Omite las categorías que ya tienen presupuesto en ``target`` (comparadas con ``category_key``).
         Devuelve ``(presupuestos_creados, cantidad_omitida)``.
         """
-        taken = {normalize_text(category) for category in cls.objects.filter(owner=owner, month=target).values_list("category", flat=True)}
+        taken = {category_key(category) for category in cls.objects.filter(owner=owner, month=target).values_list("category", flat=True)}
         originals = list(cls.objects.filter(owner=owner, month=source))
         copies = [
             cls(owner=owner, month=target, category=budget.category, description=budget.description, limit_amount=budget.limit_amount, icon=budget.icon)
             for budget in originals
-            if normalize_text(budget.category) not in taken
+            if category_key(budget.category) not in taken
         ]
         return cls.objects.bulk_create(copies), len(originals) - len(copies)
 

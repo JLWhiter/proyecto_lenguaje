@@ -140,7 +140,7 @@ class AtypicalExpenseTests(unittest.TestCase):
         self.assertEqual((info.level, info.severity), (AlertLevel.INFO, 1))
         self.assertEqual((warning.level, warning.severity), (AlertLevel.WARNING, 2))
         self.assertEqual((warning.key, warning.transaction_id, warning.period), ("atypical_expense:1", 1, "2026-11"))
-        self.assertEqual(warning.action, {"type": "transaction", "id": 1, "mes": "2026-11"})
+        self.assertEqual(warning.action, {"type": "transaction", "id": 1, "mes": "2026-11", "categoria": "Taxi"})
         self.assertEqual(warning.title, "Gasto inusual en Taxi")
         self.assertIn("«Taxi al aeropuerto» por S/ 20.00 (20 Nov)", warning.description)
         self.assertIn("promediaron S/ 11.00", warning.description)
@@ -162,6 +162,22 @@ class AtypicalExpenseTests(unittest.TestCase):
 
     def test_category_matching_ignores_case_and_spaces(self):
         self.assertEqual(len(self.check("50.00", category="  TAXI ")), 1)
+
+    def test_category_matching_ignores_accents(self):
+        history = [expense(100 + months, "11.00", date(2026, 11 - months, 10), "Alimentación") for months in range(1, 6)]
+
+        alerts = atypical_expense_alerts([*history, expense(1, "90.00", date(2026, 11, 20), "alimentacion")], "2026-11")
+
+        self.assertEqual(len(alerts), 1)
+        self.assertEqual(alerts[0].action["categoria"], "alimentacion")  # la categoría tal como está guardada
+
+    def test_action_links_to_the_movement_and_its_month(self):
+        history = [expense(100 + index, amount, date(2026, 10 - months_back, 10)) for index, (amount, months_back) in enumerate(self.HISTORY)]
+
+        alert = atypical_expense_alerts([*history, expense(9, "80.00", date(2026, 10, 31), "Taxi")], "2026-10")[0]
+
+        self.assertEqual((alert.period, alert.transaction_id), ("2026-10", 9))
+        self.assertEqual(alert.action, {"type": "transaction", "id": 9, "mes": "2026-10", "categoria": "Taxi"})
 
 
 class NegativeMonthTests(unittest.TestCase):
@@ -190,13 +206,17 @@ class NegativeMonthTests(unittest.TestCase):
 
 class EvaluateRulesTests(unittest.TestCase):
     def test_combines_every_rule_and_computes_spending_by_category(self):
-        expenses = [expense(1, "60.00", date(2026, 11, 3), "alimentación"), expense(2, "40.00", date(2026, 11, 4), "ALIMENTACIÓN")]
+        expenses = [
+            expense(1, "60.00", date(2026, 11, 3), "alimentación"),
+            expense(2, "30.00", date(2026, 11, 4), "ALIMENTACIÓN"),
+            expense(4, "10.00", date(2026, 11, 5), " Alimentacion "),
+        ]
         spent = spent_by_category([*expenses, expense(3, "99.00", date(2026, 10, 3), "Alimentación")], "2026-11")
-        budgets = [BudgetUsage(7, "Alimentación", "2026-11", Decimal("100.00"), spent["alimentación"])]
+        budgets = [BudgetUsage(7, "Alimentación", "2026-11", Decimal("100.00"), spent["alimentacion"])]
 
         candidates = evaluate_rules(budgets, expenses, MonthFlows("2026-11", Decimal("0"), Decimal("100")), "2026-11", TODAY)
 
-        self.assertEqual(spent, {"alimentación": Decimal("100.00")})
+        self.assertEqual(spent, {"alimentacion": Decimal("100.00")})
         self.assertEqual(
             [candidate.key for candidate in candidates],
             ["budget_threshold:7", "budget_projection:7", "negative_month:2026-11"],

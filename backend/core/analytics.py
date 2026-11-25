@@ -21,6 +21,7 @@ from decimal import Decimal
 import numpy as np
 import pandas as pd
 
+from .categories import category_key
 from .periods import MONTH_NAMES, shift_month
 from .transaction_filters import category_label
 
@@ -197,13 +198,15 @@ def percentages_summing_100(amounts):
 def expense_distribution(frame, month, top=5):
     """Gastos del período agrupados por categoría, en porcentaje del total.
 
+    Las categorías se agrupan por ``category_key`` ("Alimentacion" y "Alimentación"
+    son la misma) y se muestran con la primera forma encontrada.
     Si hay más de ``top`` categorías, las menores se juntan en "Otras categorías".
     """
     expenses = frame.loc[(frame["type"] == EXPENSE) & frame["in_summary"] & (frame["month"] == month)]
     if expenses.empty:
         return []
     grouped = (
-        expenses.assign(key=expenses["category"].str.casefold())
+        expenses.assign(key=expenses["category"].map(category_key))
         .groupby("key", sort=False)
         .agg(name=("category", "first"), cents=("amount_cents", "sum"))
         .sort_values("cents", ascending=False, kind="stable")

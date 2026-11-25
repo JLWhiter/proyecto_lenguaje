@@ -37,6 +37,15 @@ class TransactionFilterTests(unittest.TestCase):
     def test_category_ignores_extra_spaces(self):
         self.assertTrue(in_category("  Transporte ")(ITEMS[3]))
 
+    def test_category_and_search_ignore_accents(self):
+        unaccented = {"nombre": "Menu", "categoria": "Alimentacion", "tipo": "GASTO", "monto": Decimal("-5.00")}
+        items = [*ITEMS, unaccented]
+
+        self.assertEqual(self.names(filter_transactions(items, category="alimentacion")), ["Supermercado", "Menú del día", "Menu"])
+        self.assertEqual(self.names(filter_transactions(items, category="ALIMENTACIÓN")), ["Supermercado", "Menú del día", "Menu"])
+        self.assertEqual(self.names(filter_transactions(items, search="menu")), ["Menú del día", "Menu"])
+        self.assertEqual(self.names(filter_transactions(items, search="alimentación")), ["Supermercado", "Menú del día", "Menu"])
+
     def test_filters_by_type(self):
         self.assertEqual(self.names(filter_transactions(ITEMS, kind="INGRESO")), ["Sueldo"])
 
@@ -118,6 +127,15 @@ class GroupingTests(unittest.TestCase):
         self.assertEqual(pages, 2)
         self.assertEqual(groups[-1]["total"], Decimal("2900.00"))
         self.assertEqual(len(groups[-1]["items"]), 1)
+
+    def test_days_without_counted_movements_total_zero(self):
+        counted = list(filter(of_kind("REGULAR", "DEPOSIT"), MOVEMENTS))
+        only_transfer = [movement("Recarga Yape", "TRANSFER", "-100.00", "2026-11-23T10:00:00-05:00")]
+
+        groups = group_by_day([*MOVEMENTS[:3], *only_transfer, *MOVEMENTS[3:]], date(2026, 11, 25), daily_totals(counted))
+
+        self.assertEqual([group["total"] for group in groups], [Decimal("-20.00"), Decimal("3000.00"), Decimal("0.00"), Decimal("-80.00")])
+        self.assertEqual([len(group["items"]) for group in groups], [1, 2, 1, 1])
 
     def test_page_of(self):
         self.assertEqual(page_of(MOVEMENTS, 2, 3), (MOVEMENTS[3:], 2))

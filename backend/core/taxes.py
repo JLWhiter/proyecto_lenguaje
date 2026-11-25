@@ -70,6 +70,19 @@ def uit_for_year(year):
         raise ValueError(f"No hay un valor de UIT registrado para el año {year}.") from None
 
 
+def annual_projection(recorded_income, months, year_months=12):
+    """Ingreso anual proyectado a partir de lo registrado en ``months`` meses con ingresos.
+
+    ``recorded_income / months × 12`` redondeado a céntimos (se multiplica antes
+    de dividir para no arrastrar decimales periódicos). ``None`` si no hay
+    ingresos que proyectar.
+    """
+    recorded = Decimal(recorded_income)
+    if months <= 0 or recorded <= 0:
+        return None
+    return to_cents(recorded * year_months / months)
+
+
 def income_tax(gross_income, uit, additional_deductions=0):
     """Calcula el impuesto anual sobre la renta bruta ``gross_income``.
 

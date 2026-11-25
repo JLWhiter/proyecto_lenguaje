@@ -19,11 +19,11 @@ from .finance import (
     category_catalog,
     dashboard_payload,
     filtered_movements,
+    income_tax_payload,
     serialize_account,
     serialize_budgets,
     serialize_transaction,
     spent_for,
-    taxable_income,
     transactions_payload,
 )
 from .models import FinanceAccount, FinanceAlert, FinanceBudget, FinanceTransaction
@@ -50,7 +50,7 @@ from .serializers import (
     TransactionUpdateSerializer,
     TransferSerializer,
 )
-from .taxes import income_tax, uit_for_year
+from .taxes import uit_for_year
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +137,7 @@ class TransactionListView(FinanceAPIView):
 class TransactionDetailView(FinanceAPIView):
     def patch(self, request, pk):
         movement = self.owned(FinanceTransaction.objects, pk, "Movimiento no encontrado.")
-        values = dict(self.validated(TransactionUpdateSerializer, request.data))
+        values = dict(self.validated(TransactionUpdateSerializer, request.data, instance=movement))
         previous_period = period_of_moment(movement.occurred_at)
         movement.edit(account=values.pop("account", None), **values)
         self.refresh_alerts(previous_period, movement)
@@ -346,38 +346,18 @@ class SilenceAlertsView(FinanceAPIView):
 class IncomeTaxView(FinanceAPIView):
     """Estimación del Impuesto a la Renta anual de quinta categoría.
 
+    ``GET /impuestos/renta/?anio=&ingreso_anual=&deducciones_adicionales=&proyectar=1``.
     Usa ``ingreso_anual`` si se envía; si no, suma los ingresos REGULAR del año
-    (sin depósitos, transferencias, ajustes ni saldos iniciales).
+    (sin depósitos, transferencias, ajustes ni saldos iniciales). Con
+    ``proyectar=1`` en el año en curso, calcula sobre la proyección a 12 meses.
     """
 
     def get(self, request):
         values = self.validated(IncomeTaxQuerySerializer, request.query_params)
-        year = values.get("anio", local_today().year)
+        today = local_today()
+        year = values.get("anio", today.year)
         try:
             uit = uit_for_year(year)
         except ValueError as error:
             return Response({"anio": [str(error)]}, status=status.HTTP_400_BAD_REQUEST)
-
-        if "ingreso_anual" in values:
-            gross, source = values["ingreso_anual"], "manual"
-        else:
-            gross, source = taxable_income(request.user, year), "movimientos"
-
-        result = income_tax(gross, uit, values["deducciones_adicionales"])
-        return Response(
-            {
-                "anio": year,
-                "uit": result.uit,
-                "fuente": source,
-                "ingreso_bruto": result.gross_income,
-                "deducciones": result.deductions,
-                "renta_neta": result.net_income,
-                "impuesto": result.tax,
-                "tasa_efectiva": result.effective_rate,
-                "tramos": [
-                    {"desde": item.lower, "hasta": item.upper, "tasa": item.rate * 100, "base": item.taxable, "impuesto": item.tax}
-                    for item in result.brackets
-                ],
-                "nota": "Estimación de rentas de quinta categoría. No incluye retenciones, créditos ni otras rentas.",
-            }
-        )
+        return Response(income_tax_payload(request.user, year, uit, values, today))

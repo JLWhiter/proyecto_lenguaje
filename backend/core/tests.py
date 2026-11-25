@@ -1,13 +1,18 @@
+from datetime import date, datetime
+from datetime import timezone as dt_timezone
 from decimal import Decimal
+from unittest import mock
 
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient
 
 from .alerts import AlertRule
-from .models import FinanceAlert, FinanceBudget
+from .models import FinanceAlert, FinanceBudget, FinanceTransaction
 from .periods import current_period, local_today, period_label
 from .testing import API, FinanceAPITestCase, local_datetime
+
+Kind = FinanceTransaction.Kind
 
 
 class AuthenticationTests(FinanceAPITestCase):
@@ -156,6 +161,108 @@ class IncomeTaxTests(FinanceAPITestCase):
         self.assertEqual(response.data["impuesto"], Decimal("14318.50"))
         self.assertEqual(self.client.get(f"{API}/impuestos/renta/", {"anio": 2001}).status_code, 400)
         self.assertEqual(self.client.get(f"{API}/impuestos/renta/", {"ingreso_anual": "-5"}).status_code, 400)
+
+
+@mock.patch("core.views.local_today", return_value=date(2026, 7, 15))
+class CurrentYearIncomeTaxTests(FinanceAPITestCase):
+    """Año en curso (2026, UIT 5 500): 6 sueldos de 5 000 registrados hasta junio."""
+
+    def setUp(self):
+        super().setUp()
+        self.account = self.open_account(opened_at=local_datetime(2026, 1, 1, 0))
+
+    def salary(self, amount, when, name="Sueldo"):
+        return self.account.deposit(Decimal(amount), name=name, category="Salario", kind=Kind.REGULAR, occurred_at=when)
+
+    def six_salaries(self):
+        for month in range(1, 7):
+            self.salary("5000.00", local_datetime(2026, month, 28))
+        self.account.deposit(Decimal("900.00"), occurred_at=local_datetime(2026, 7, 1))  # depósito: no es renta
+
+    def tax(self, **params):
+        response = self.client.get(f"{API}/impuestos/renta/", params)
+        self.assertEqual(response.status_code, 200, response.data)
+        return response.data
+
+    def test_reports_recorded_and_projected_income_without_projecting(self, _today):
+        self.six_salaries()
+
+        data = self.tax()
+
+        self.assertEqual((data["anio"], data["fuente"], data["anio_en_curso"], data["proyectado"]), (2026, "movimientos", True, False))
+        self.assertEqual((data["ingreso_registrado"], data["meses_con_ingresos"]), (Decimal("30000.00"), 6))
+        self.assertEqual(data["ingreso_proyectado"], Decimal("60000.00"))
+        self.assertEqual((data["ingreso_bruto"], data["impuesto"]), (Decimal("30000.00"), Decimal("0.00")))
+
+    def test_proyectar_computes_the_tax_on_the_projection(self, _today):
+        self.six_salaries()
+
+        data = self.tax(proyectar=1)
+
+        self.assertEqual((data["fuente"], data["proyectado"]), ("movimientos", True))
+        self.assertEqual(data["ingreso_bruto"], Decimal("60000.00"))
+        self.assertEqual(data["deducciones"], Decimal("38500.00"))
+        self.assertEqual(data["renta_neta"], Decimal("21500.00"))
+        self.assertEqual(data["impuesto"], Decimal("1720.00"))
+        self.assertEqual(data["tasa_efectiva"], Decimal("2.87"))
+        self.assertEqual(data["ingreso_registrado"], Decimal("30000.00"))
+        self.assertEqual(self.tax(proyectar="true")["impuesto"], Decimal("1720.00"))
+        self.assertEqual(self.tax(proyectar=0)["impuesto"], Decimal("0.00"))
+
+    def test_months_are_distinct_local_months(self, _today):
+        self.salary("3000.00", local_datetime(2026, 1, 15))
+        self.salary("1000.00", local_datetime(2026, 1, 30), name="Bono")
+        self.salary("4000.00", datetime(2026, 3, 1, 3, tzinfo=dt_timezone.utc))  # 28 Feb 22:00 en Lima
+        self.salary("4000.00", local_datetime(2026, 3, 15))
+
+        data = self.tax(proyectar=1)
+
+        self.assertEqual((data["ingreso_registrado"], data["meses_con_ingresos"]), (Decimal("12000.00"), 3))
+        self.assertEqual(data["ingreso_proyectado"], Decimal("48000.00"))
+        # 48 000 - 38 500 = 9 500 al 8 %.
+        self.assertEqual((data["ingreso_bruto"], data["impuesto"]), (Decimal("48000.00"), Decimal("760.00")))
+
+    def test_projection_is_rounded_to_cents(self, _today):
+        for month in range(1, 7):
+            self.salary("14.29", local_datetime(2026, month, 10))
+        self.salary("14.27", local_datetime(2026, 7, 10))
+
+        data = self.tax(proyectar=1)
+
+        # 100.01 × 12 / 7 = 171.4457... -> 171.45
+        self.assertEqual((data["ingreso_registrado"], data["meses_con_ingresos"]), (Decimal("100.01"), 7))
+        self.assertEqual((data["ingreso_proyectado"], data["ingreso_bruto"]), (Decimal("171.45"), Decimal("171.45")))
+
+    def test_manual_income_ignores_proyectar(self, _today):
+        self.six_salaries()
+
+        data = self.tax(ingreso_anual="150000", proyectar=1)
+
+        self.assertEqual((data["fuente"], data["proyectado"], data["ingreso_bruto"]), ("manual", False, Decimal("150000.00")))
+        self.assertEqual(data["ingreso_proyectado"], Decimal("60000.00"))
+        self.assertEqual(data["ingreso_registrado"], Decimal("30000.00"))
+
+    def test_without_income_there_is_nothing_to_project(self, _today):
+        data = self.tax(proyectar=1)
+
+        self.assertEqual((data["ingreso_registrado"], data["meses_con_ingresos"]), (Decimal("0.00"), 0))
+        self.assertIsNone(data["ingreso_proyectado"])
+        self.assertEqual((data["proyectado"], data["ingreso_bruto"], data["impuesto"]), (False, Decimal("0.00"), Decimal("0.00")))
+
+    def test_past_years_are_never_projected(self, _today):
+        self.salary("5000.00", local_datetime(2025, 3, 10))
+        self.salary("5000.00", local_datetime(2025, 4, 10))
+
+        data = self.tax(anio=2025, proyectar=1)
+
+        self.assertEqual((data["anio_en_curso"], data["proyectado"], data["ingreso_proyectado"]), (False, False, None))
+        self.assertEqual((data["ingreso_registrado"], data["meses_con_ingresos"]), (Decimal("10000.00"), 2))
+        self.assertEqual(data["ingreso_bruto"], Decimal("10000.00"))
+
+    def test_invalid_proyectar(self, _today):
+        response = self.client.get(f"{API}/impuestos/renta/", {"proyectar": "quizas"})
+
+        self.assertEqual((response.status_code, response.data["proyectar"]), (400, ["Usa proyectar=1 o proyectar=0."]))
 
 
 class AlertTests(FinanceAPITestCase):

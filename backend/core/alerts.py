@@ -30,9 +30,9 @@ import numpy as np
 from django.db.models import TextChoices
 
 from .budgets import CAUTION, CRITICAL, EXCEEDED, budget_state, projected_spending, usage_percentage
+from .categories import category_key
 from .money import CURRENCY_SYMBOLS, money  # noqa: F401  (money se reexporta para las pruebas)
 from .periods import days_remaining, first_day, period_label, period_of, shift_month, short_date
-from .transaction_filters import normalize_text
 
 ZERO = Decimal("0.00")
 TEN = Decimal("10")
@@ -264,17 +264,17 @@ def in_month(month):
 
 
 def history_by_category(expenses, period, months=HISTORY_MONTHS):
-    """Montos (float64) de los gastos de los ``months`` meses previos a ``period``, por categoría normalizada."""
+    """Montos (float64) de los gastos de los ``months`` meses previos a ``period``, por clave de categoría."""
     window = {shift_month(period, -offset) for offset in range(1, months + 1)}
     grouped = {}
     for expense in filter(lambda item: period_of(item.day) in window, expenses):
-        grouped.setdefault(normalize_text(expense.category), []).append(float(expense.amount))
+        grouped.setdefault(category_key(expense.category), []).append(float(expense.amount))
     return {key: np.asarray(amounts, dtype=np.float64) for key, amounts in grouped.items()}
 
 
 def atypical_alert(expense, history, currency="PEN"):
     """Alerta si ``expense`` supera media + 2σ de su categoría (con al menos ``MIN_SAMPLES`` muestras)."""
-    samples = history.get(normalize_text(expense.category))
+    samples = history.get(category_key(expense.category))
     if samples is None or samples.size < MIN_SAMPLES:
         return None
     mean, sigma = float(np.mean(samples)), float(np.std(samples, ddof=1))
@@ -298,7 +298,7 @@ def atypical_alert(expense, history, currency="PEN"):
             f"{fmt(Decimal(str(round(mean, 2))))} y casi nunca pasaron de {fmt(usual)} ({samples.size} movimientos)."
         ),
         action_label="Revisar gasto",
-        action={"type": "transaction", "id": expense.id, "mes": period},
+        action={"type": "transaction", "id": expense.id, "mes": period, "categoria": expense.category},
         transaction_id=expense.id,
     )
 
@@ -346,10 +346,10 @@ def negative_month_alerts(flows, today, currency="PEN"):
 
 
 def spent_by_category(expenses, period):
-    """Gasto de ``period`` por categoría normalizada (igual que ``finance.spent_by_category``)."""
+    """Gasto de ``period`` por clave de categoría (igual que ``finance.spent_by_category``)."""
     spent = {}
     for expense in filter(in_month(period), expenses):
-        key = normalize_text(expense.category)
+        key = category_key(expense.category)
         spent[key] = spent.get(key, ZERO) + expense.amount
     return spent
 

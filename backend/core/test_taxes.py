@@ -7,10 +7,11 @@ Se pueden ejecutar sin Django: ``python -m unittest core.test_taxes``.
 import unittest
 from decimal import Decimal
 
-from core.taxes import income_tax, uit_for_year
+from core.taxes import annual_projection, income_tax, uit_for_year
 
 UIT_2024 = Decimal("5150")
 UIT_2025 = Decimal("5350")
+UIT_2026 = Decimal("5500")
 
 
 class IncomeTaxTests(unittest.TestCase):
@@ -109,6 +110,29 @@ class IncomeTaxTests(unittest.TestCase):
         self.assertEqual(uit_for_year(2025), Decimal("5350"))
         with self.assertRaises(ValueError):
             uit_for_year(1999)
+
+
+class AnnualProjectionTests(unittest.TestCase):
+    def test_takes_the_recorded_months_to_twelve(self):
+        # 6 meses con 5 000 de sueldo: 30 000 registrados -> 60 000 al año.
+        self.assertEqual(annual_projection(Decimal("30000.00"), 6), Decimal("60000.00"))
+        self.assertEqual(annual_projection(Decimal("4200.00"), 12), Decimal("4200.00"))
+
+    def test_rounds_to_cents_without_carrying_periodic_decimals(self):
+        # 1 000 / 3 × 12 = 4 000 exactos (dividir primero daría 3 999.999...).
+        self.assertEqual(annual_projection(Decimal("1000.00"), 3), Decimal("4000.00"))
+        # 100.01 / 7 × 12 = 171.445714... -> 171.45
+        self.assertEqual(annual_projection(Decimal("100.01"), 7), Decimal("171.45"))
+
+    def test_no_income_gives_no_projection(self):
+        self.assertIsNone(annual_projection(Decimal("0.00"), 0))
+        self.assertIsNone(annual_projection(Decimal("0.00"), 3))
+
+    def test_projection_changes_the_tax(self):
+        # Registrado: 30 000 en 6 meses -> no paga (menos de 7 UIT).
+        # Proyectado: 60 000 - 38 500 = 21 500 de renta neta al 8 % = 1 720.
+        self.assertEqual(income_tax(Decimal("30000.00"), UIT_2026).tax, Decimal("0.00"))
+        self.assertEqual(income_tax(annual_projection(Decimal("30000.00"), 6), UIT_2026).tax, Decimal("1720.00"))
 
 
 if __name__ == "__main__":

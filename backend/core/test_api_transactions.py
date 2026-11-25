@@ -110,8 +110,26 @@ class TransactionListTests(FinanceAPITestCase):
 
         titles = [group["titulo"] for group in data["grupos"]]
         self.assertEqual(titles, ["7 MAY 2024", "6 MAY 2024", "5 MAY 2024", "4 MAY 2024", "3 MAY 2024", "2 MAY 2024", "1 MAY 2024"])
-        self.assertEqual(data["grupos"][1]["total"], Decimal("0.00"))
-        self.assertEqual(data["grupos"][-1]["total"], Decimal("1050.00"))
+        self.assertEqual(
+            [group["total"] for group in data["grupos"]],
+            [Decimal("40.00"), Decimal("0.00"), Decimal("200.00"), Decimal("-20.00"), Decimal("-15.00"), Decimal("-50.00"), Decimal("0.00")],
+        )
+
+    def test_day_totals_only_count_what_the_month_summary_counts(self):
+        self.main.adjust_balance(Decimal("2000.00"), occurred_at=local_datetime(2024, 5, 4, 18))
+
+        data = self.list()
+        wallet = self.list(cuenta_id=self.wallet.id)
+
+        groups = {group["fecha"]: group for group in data["grupos"]}
+        self.assertEqual(groups["2024-05-01"]["total"], Decimal("0.00"))  # saldos iniciales
+        self.assertEqual([item["nombre"] for item in groups["2024-05-01"]["items"]], ["Saldo inicial", "Saldo inicial"])
+        self.assertEqual(groups["2024-05-04"]["total"], Decimal("-20.00"))  # el ajuste se lista pero no suma
+        self.assertIn("Ajuste de saldo", [item["nombre"] for item in groups["2024-05-04"]["items"]])
+        wallet_days = {group["fecha"]: group["total"] for group in wallet["grupos"]}
+        self.assertEqual(wallet_days["2024-05-06"], Decimal("0.00"))  # transferencia recibida
+        self.assertEqual(sum(group["total"] for group in data["grupos"]), data["neto"])
+        self.assertEqual(sum(wallet_days.values()), wallet["neto"])
 
     def test_pagination(self):
         first = self.list(page_size=3)

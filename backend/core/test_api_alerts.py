@@ -163,10 +163,38 @@ class AtypicalExpenseEngineTests(AlertAPITestCase):
         unusual = self.spend("40.00", category="Taxi", name="Taxi al aeropuerto")
         alert = self.atypical().get()
         self.assertEqual((alert.transaction_id, alert.level, alert.period), (unusual.id, AlertLevel.WARNING, self.period))
-        self.assertEqual(alert.action, {"type": "transaction", "id": unusual.id, "mes": self.period})
+        self.assertEqual(alert.action, {"type": "transaction", "id": unusual.id, "mes": self.period, "categoria": "Taxi"})
 
         self.delete(unusual)
         self.assertFalse(self.atypical().exists())
+
+    def test_link_carries_movement_month_and_category_in_list_and_dashboard(self):
+        unusual = self.spend("40.00", category="Taxi", name="Taxi al aeropuerto")
+        expected = {"label": "Revisar gasto", "type": "transaction", "id": unusual.id, "mes": self.period, "categoria": "Taxi"}
+
+        item = next(item for item in self.alerts()["items"] if item["regla"] == AlertRule.ATYPICAL_EXPENSE)
+        dashboard = self.client.get(f"{API}/dashboard/resumen/").data["alertas_activas"]
+        detail = next(alert["accion_detalle"] for alert in dashboard if alert["regla"] == AlertRule.ATYPICAL_EXPENSE)
+
+        self.assertEqual(item["accion"], expected)
+        self.assertEqual(detail, expected)
+
+    def test_history_ignores_accents_in_the_category(self):
+        # Directo en el modelo: la API la guardaría como "Taxi" (la forma que ya usa el usuario).
+        unusual = self.account.withdraw(Decimal("40.00"), name="Taxi", category="Taxí")
+
+        evaluate_alerts(self.user, self.period)
+
+        alert = self.atypical().get()
+        self.assertEqual((alert.transaction_id, alert.action["categoria"]), (unusual.id, "Taxí"))
+
+    def test_existing_alerts_get_the_category_on_the_next_evaluation(self):
+        unusual = self.spend("40.00", category="Taxi")
+        FinanceAlert.objects.filter(rule=AlertRule.ATYPICAL_EXPENSE).update(action={"type": "transaction", "id": unusual.id, "mes": self.period})
+
+        evaluate_alerts(self.user, self.period)
+
+        self.assertEqual(self.atypical().get().action["categoria"], "Taxi")
 
     def test_alert_follows_the_transaction_when_edited(self):
         unusual = self.spend("40.00", category="Taxi")

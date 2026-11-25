@@ -15,6 +15,7 @@ from decimal import Decimal
 from functools import reduce
 from itertools import groupby
 
+from .categories import category_key
 from .periods import day_title
 
 ZERO = Decimal("0.00")
@@ -37,9 +38,9 @@ def normalize_text(value):
 
 
 def in_category(category):
-    """Predicado: la categoría del movimiento contiene ``category``."""
-    target = normalize_text(category)
-    return lambda item: target in normalize_text(item["categoria"])
+    """Predicado: la categoría del movimiento contiene ``category`` (sin importar mayúsculas, espacios ni tildes)."""
+    target = category_key(category)
+    return lambda item: target in category_key(item["categoria"])
 
 
 def of_type(kind):
@@ -53,9 +54,9 @@ def of_kind(*kinds):
 
 
 def matches_text(search):
-    """Predicado: el texto aparece en el nombre o en la categoría del movimiento."""
-    target = normalize_text(search)
-    return lambda item: target in normalize_text(item["nombre"]) or target in normalize_text(item["categoria"])
+    """Predicado: el texto aparece en el nombre o en la categoría del movimiento (sin importar tildes)."""
+    target = category_key(search)
+    return lambda item: target in category_key(item["nombre"]) or target in category_key(item["categoria"])
 
 
 def all_of(*predicates):
@@ -100,9 +101,10 @@ def group_by_day(items, today, totals):
 
     ``totals`` trae el neto de cada día calculado sobre todos los movimientos
     filtrados, así el total es correcto aunque un día quede entre dos páginas.
+    Un día sin total (por ejemplo, solo con transferencias) suma 0.
     """
     return [
-        {"titulo": day_title(day, today), "fecha": day.isoformat(), "total": totals[day], "items": list(group)}
+        {"titulo": day_title(day, today), "fecha": day.isoformat(), "total": totals.get(day, ZERO), "items": list(group)}
         for day, group in groupby(items, key=item_day)
     ]
 

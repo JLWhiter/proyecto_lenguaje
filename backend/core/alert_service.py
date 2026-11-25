@@ -24,6 +24,7 @@ from django.utils import timezone
 from . import alerts
 from .alerts import DASHBOARD_TYPES, ENGINE_RULES, AlertLevel, AlertRule, BudgetUsage, Expense, MonthFlows
 from .analytics import SUMMARY_STATUSES
+from .categories import category_key
 from .models import AlertEvaluation, FinanceAlert, FinanceBudget, FinanceTransaction, active_alert
 from .periods import local_today, period_bounds, period_of, shift_month
 from .transaction_filters import normalize_text
@@ -54,7 +55,7 @@ def recent_expenses(user, period):
 
 def budget_usages(user, period, spent):
     rows = FinanceBudget.objects.filter(owner=user, month=period).order_by("id").values_list("id", "category", "limit_amount")
-    return [BudgetUsage(pk, category, period, limit, spent.get(normalize_text(category), ZERO)) for pk, category, limit in rows]
+    return [BudgetUsage(pk, category, period, limit, spent.get(category_key(category), ZERO)) for pk, category, limit in rows]
 
 
 def month_flows(user, period):

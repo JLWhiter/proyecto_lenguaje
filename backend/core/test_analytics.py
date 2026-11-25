@@ -158,6 +158,22 @@ class DashboardChartsTests(unittest.TestCase):
             [("Alimentación", 75.0, 300.0), ("Transporte", 25.0, 100.0)],
         )
 
+    def test_expense_distribution_ignores_accents(self):
+        records = [
+            record(1, utc(2024, 5, 2), "Alimentación", "GASTO", Decimal("60.00")),
+            record(2, utc(2024, 5, 3), "alimentacion", "GASTO", Decimal("15.00")),
+            record(3, utc(2024, 5, 4), "ALIMENTACIÓN", "GASTO", Decimal("25.00")),
+            record(4, utc(2024, 5, 5), "Educacion", "GASTO", Decimal("50.00")),
+            record(5, utc(2024, 5, 6), "Educación", "GASTO", Decimal("50.00")),
+        ]
+
+        result = expense_distribution(clean_transactions(records, TZ), "2024-05")
+
+        self.assertEqual(
+            [(item["name"], item["value"], item["monto"]) for item in result],
+            [("Alimentación", 50.0, 100.0), ("Educacion", 50.0, 100.0)],
+        )
+
     def test_small_categories_are_grouped(self):
         records = [record(index, utc(2024, 5, 1), f"Cat {index}", "GASTO", Decimal(100 - index)) for index in range(6)]
 
