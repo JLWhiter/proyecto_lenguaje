@@ -6,6 +6,7 @@ import { ErrorState } from '../../components/ui'
 import { usePeriod } from '../../context/PeriodContext'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { toNumber } from '../../lib/format'
+import { monthPhrase } from '../../lib/period'
 import { useAccounts } from '../accounts/useAccounts'
 import { DepositDialog, TransactionDialog, TransferDialog } from '../transactions/TransactionDialogs'
 import { useExportTransactions } from '../transactions/useExportTransactions'
@@ -99,7 +100,7 @@ export default function DashboardPage() {
           <button type="button" onClick={() => exportCsv({ mes: period })} disabled={exporting} className={SECONDARY_BUTTON}>
             <Download className="h-4 w-4 text-emerald-600" aria-hidden="true" />
             {exporting ? 'Exportando…' : 'Exportar CSV'}
-            <span className="sr-only"> de {label}</span>
+            <span className="sr-only"> de {monthPhrase(period)}</span>
           </button>
         </div>
       )}

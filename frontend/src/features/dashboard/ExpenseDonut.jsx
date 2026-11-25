@@ -3,7 +3,7 @@ import { Plus } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { formatPercent, toNumber } from '../../lib/format'
-import { monthLabel } from '../../lib/period'
+import { monthLabel, monthPhrase } from '../../lib/period'
 import { Amount, CARD, CARD_TITLE } from './DashboardBits'
 import { movementsLink } from './dashboardUtils'
 import { useDashboardMoney } from './useDashboardMoney'
@@ -27,13 +27,14 @@ function DonutTooltip({ active, payload, format }) {
 export default function ExpenseDonut({ data, period, canRegister, onRegisterExpense }) {
   const { text } = useDashboardMoney()
   const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
-  const items =(Array.isArray(data.distribucion_gastos) ? data.distribucion_gastos : []).map((item) => ({
+  const items = (Array.isArray(data.distribucion_gastos) ? data.distribucion_gastos : []).map((item) => ({
     ...item,
     monto: toNumber(item.monto),
     value: toNumber(item.value),
   }))
   const total = text(data.gastos_mensuales)
   const periodText = monthLabel(period)
+  const periodPhrase = monthPhrase(period)
 
   return (
     <section aria-labelledby="distribution-title" className={CARD}>
@@ -87,25 +88,36 @@ export default function ExpenseDonut({ data, period, canRegister, onRegisterExpe
             </div>
           </div>
 
-          <ul className="w-full min-w-0 space-y-1" aria-label={`Gastos por categoría en ${periodText}`}>
+          <ul className="w-full min-w-0 space-y-1" aria-label={`Gastos por categoría en ${periodPhrase}`}>
             {items.map((item) => {
+              // "Otras categorías" agrupa varias: no hay un filtro de Movimientos que dé ese mismo total.
               const isOthers = item.name.toLocaleLowerCase('es') === OTHERS
+              const content = (
+                <>
+                  <span className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ background: item.color || '#94a3b8' }} aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-baseline justify-between gap-2">
+                      <span className="min-w-0 break-words text-sm font-medium text-slate-700">{item.name}</span>
+                      <span className="shrink-0 text-xs font-semibold tabular-nums text-slate-500">{formatPercent(item.value, { digits: 1 })}</span>
+                    </span>
+                    <Amount value={item.monto} className="block text-sm font-semibold text-slate-900" />
+                    {isOthers && <span className="mt-0.5 block text-xs text-slate-500">Suma de las categorías con menos gasto</span>}
+                  </span>
+                </>
+              )
               return (
                 <li key={item.name}>
-                  <Link
-                    to={movementsLink(period, { tipo: 'GASTO', categoria: isOthers ? '' : item.name })}
-                    className="flex min-h-11 items-start gap-3 rounded-xl px-3 py-1.5 transition hover:bg-slate-50"
-                  >
-                    <span className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ background: item.color || '#94a3b8' }} aria-hidden="true" />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline justify-between gap-2">
-                        <span className="min-w-0 break-words text-sm font-medium text-slate-700">{item.name}</span>
-                        <span className="shrink-0 text-xs font-semibold tabular-nums text-slate-500">{formatPercent(item.value, { digits: 1 })}</span>
-                      </span>
-                      <Amount value={item.monto} className="block text-sm font-semibold text-slate-900" />
-                    </span>
-                    <span className="sr-only">(ver movimientos)</span>
-                  </Link>
+                  {isOthers ? (
+                    <div className="flex min-h-11 items-start gap-3 px-3 py-1.5">{content}</div>
+                  ) : (
+                    <Link
+                      to={movementsLink(period, { tipo: 'GASTO', categoria: item.name })}
+                      className="flex min-h-11 items-start gap-3 rounded-xl px-3 py-1.5 transition hover:bg-slate-50"
+                    >
+                      {content}
+                      <span className="sr-only">(ver movimientos)</span>
+                    </Link>
+                  )}
                 </li>
               )
             })}
@@ -113,7 +125,7 @@ export default function ExpenseDonut({ data, period, canRegister, onRegisterExpe
         </div>
       ) : (
         <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
-          <p className="font-semibold text-slate-700">Sin gastos en {periodText}</p>
+          <p className="font-semibold text-slate-700">Sin gastos en {periodPhrase}</p>
           <p className="mt-1">Cuando registres gastos verás aquí en qué se va tu dinero.</p>
           {canRegister && (
             <button

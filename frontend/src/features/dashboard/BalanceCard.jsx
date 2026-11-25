@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { ArrowRightLeft, CircleDollarSign, EyeOff, Eye, Landmark, Wallet } from 'lucide-react'
 import { IconButton } from '../../components/ui'
 import { usePreferences } from '../../context/PreferencesContext'
-import { monthLabel } from '../../lib/period'
+import { monthPhrase } from '../../lib/period'
 import { Amount, CARD, VariationBadge } from './DashboardBits'
 import { previousMonthText } from './dashboardUtils'
 
@@ -59,7 +59,7 @@ export default function BalanceCard({
             <Wallet className="h-5 w-5" aria-hidden="true" />
           </span>
           <h2 id="balance-title" className="min-w-0 text-base font-semibold text-slate-700">
-            {isPast ? `Saldo al cierre de ${monthLabel(period)}` : 'Balance total disponible'}
+            {isPast ? `Saldo al cierre de ${monthPhrase(period)}` : 'Balance total disponible'}
           </h2>
         </div>
         <IconButton
@@ -80,7 +80,7 @@ export default function BalanceCard({
           </p>
           <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-500">
             <VariationBadge pct={data.balance_variacion_pct} increaseIsGood />
-            <span>vs cierre de {previousMonthText(period)}</span>
+            <span>vs. cierre de {previousMonthText(period)}</span>
           </p>
           {isPast && (
             <p className="mt-2 text-sm text-slate-500">

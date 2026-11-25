@@ -1,8 +1,10 @@
 // Helpers puros del Resumen (sin React).
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
-import { APP_TIME_ZONE, isValidMonth, monthLabel, monthName, shiftMonth } from '../../lib/period'
+import { formatNumber, formatTime } from '../../lib/format'
+import { APP_TIME_ZONE, isValidMonth, monthPhrase, shiftMonth } from '../../lib/period'
+import { alertActionTarget } from '../alerts/alertModel'
 
-export const HIDDEN_AMOUNT = '••••'
+export { HIDDEN_AMOUNT, maskAmountsInText } from '../../lib/format'
 
 const TONE_CLASSES = {
   good: 'bg-emerald-50 text-emerald-700',
@@ -12,12 +14,14 @@ const TONE_CLASSES = {
 
 function toFiniteNumber(value) {
   if (value === null || value === undefined || value === '') return null
-  const number = typeof value === 'number' ? value : Number.parseFloat(String(value).replace('%', '').replace(',', '.'))
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  // '+1,292.6%' (texto del backend, con separador de miles) → 1292.6
+  const number = Number.parseFloat(String(value).replace('%', '').replace(/,/g, '').trim())
   return Number.isFinite(number) ? number : null
 }
 
 /**
- * Variación porcentual → flecha, color y textos.
+ * Variación porcentual → flecha, color y textos ('+1,292.6%', con separador de miles).
  * `increaseIsGood`: true para ingresos/saldo (subir es bueno), false para gastos (subir es malo).
  * `null` (mes anterior en 0) → "—" neutro.
  */
@@ -31,7 +35,7 @@ export function variationInfo(pct, { increaseIsGood = true } = {}) {
   }
   const up = value > 0
   const tone = up === increaseIsGood ? 'good' : 'bad'
-  const magnitude = Math.abs(value).toFixed(1)
+  const magnitude = formatNumber(Math.abs(value), { digits: 1 })
   return {
     tone,
     className: TONE_CLASSES[tone],
@@ -46,11 +50,11 @@ export function parsePercentText(text) {
   return toFiniteNumber(text)
 }
 
-/** Mes anterior para "vs …": 'Octubre' (mismo año) o 'Diciembre 2025' (cambia el año). */
+/** Mes anterior dentro de una frase ("vs. octubre"): 'octubre' (mismo año) o 'diciembre 2025' (cambia el año). */
 export function previousMonthText(period) {
   if (!isValidMonth(period)) return 'el mes anterior'
   const previous = shiftMonth(period, -1)
-  return previous.slice(0, 4) === period.slice(0, 4) ? monthName(previous) : monthLabel(previous)
+  return monthPhrase(previous, { year: previous.slice(0, 4) !== period.slice(0, 4) })
 }
 
 /** Semáforo del presupuesto: verde < 75 %, ámbar < 90 %, rojo ≥ 90 %. */
@@ -76,41 +80,17 @@ export function movementsLink(period, filters = {}) {
 }
 
 /**
- * Destino de la acción principal de una alerta según `accion_detalle`:
- *   budget → /app/presupuestos?mes=<mes>&presupuesto=<id>
- *   transaction | transactions → /app/movimientos?mes=<mes>
- *   otro → null (el llamador usa /app/alertas)
+ * Destino de la acción principal de una alerta según `accion_detalle` (mismo constructor de enlaces
+ * que el Centro de Alertas). `null` → el llamador usa /app/alertas.
  */
 export function alertTarget(alert, fallbackPeriod) {
-  const detail = alert?.accion_detalle
-  if (!detail) return null
-  const mes = [detail.mes, alert?.periodo, fallbackPeriod].find(isValidMonth)
-  if (detail.type === 'budget') {
-    const params = new URLSearchParams()
-    if (mes) params.set('mes', mes)
-    if (detail.id !== null && detail.id !== undefined) params.set('presupuesto', String(detail.id))
-    return { pathname: '/app/presupuestos', search: `?${params}` }
-  }
-  if (detail.type === 'transaction' || detail.type === 'transactions') {
-    return movementsLink(mes)
-  }
-  return null
-}
-
-// Montos que el backend escribe dentro de textos: 'S/ 1,234.50', '-$ 20.00', '€ 3.00'.
-const AMOUNT_IN_TEXT = /-?(?:S\/|US\$|\$|€)\s?\d[\d,]*(?:\.\d+)?/g
-
-/** Oculta los montos de un texto (títulos y descripciones de alertas) cuando "Mostrar montos" está apagado. */
-export function maskAmountsInText(text, hidden) {
-  if (!hidden || !text) return text
-  return String(text).replace(AMOUNT_IN_TEXT, HIDDEN_AMOUNT)
+  return alertActionTarget(alert?.accion_detalle, alert?.periodo, fallbackPeriod)
 }
 
 const limaDay = new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' })
 const limaShortDay = new Intl.DateTimeFormat('es-PE', { timeZone: APP_TIME_ZONE, day: 'numeric', month: 'short' })
-const limaTime = new Intl.DateTimeFormat('es-PE', { timeZone: APP_TIME_ZONE, hour: '2-digit', minute: '2-digit' })
 
-/** Fecha de un movimiento en hora de Lima: 'Hoy, 09:30 a. m.', 'Ayer, …' o '24 nov., 11:00 a. m.'. */
+/** Fecha de un movimiento en hora de Lima (24 horas): 'Hoy, 18:30', 'Ayer, …' o '24 nov., 11:00'. */
 export function movementWhen(occurredAt, now = new Date()) {
   const date = occurredAt ? new Date(occurredAt) : null
   if (!date || Number.isNaN(date.getTime())) return ''
@@ -118,5 +98,5 @@ export function movementWhen(occurredAt, now = new Date()) {
   const today = limaDay.format(now)
   const yesterday = limaDay.format(new Date(now.getTime() - 24 * 60 * 60 * 1000))
   const dayText = day === today ? 'Hoy' : day === yesterday ? 'Ayer' : limaShortDay.format(date)
-  return `${dayText}, ${limaTime.format(date)}`
+  return `${dayText}, ${formatTime(date)}`
 }

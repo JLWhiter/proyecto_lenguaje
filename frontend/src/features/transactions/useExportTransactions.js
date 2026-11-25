@@ -3,7 +3,6 @@ import { useToast } from '../../components/ui'
 import { usePeriod } from '../../context/PeriodContext'
 import { transactionsApi } from '../../lib/api/transactions'
 import { downloadBlob } from '../../lib/download'
-import { monthLabel } from '../../lib/period'
 
 const FILTER_KEYS = ['mes', 'tipo', 'categoria', 'cuenta_id', 'search']
 
@@ -17,7 +16,8 @@ function pickFilters(value) {
  * `const { exportCsv, exporting } = useExportTransactions()`
  *   exportCsv()                                  → CSV del período seleccionado en el header
  *   exportCsv({ mes, tipo, categoria, cuenta_id, search }) → CSV con esos filtros
- * Descarga `finova-transacciones-AAAA-MM.csv` y avisa con un toast (también si falla, con el motivo).
+ * Siempre es el CSV de UN mes (`mes`, por defecto el del header) con esos filtros. El archivo se guarda con el
+ * nombre que envía el backend (Content-Disposition, p. ej. `finova-transacciones-2026-11.csv`) y el aviso lo muestra.
  */
 export function useExportTransactions() {
   const toast = useToast()
@@ -31,7 +31,7 @@ export function useExportTransactions() {
       try {
         const { blob, filename } = await transactionsApi.exportCsv(filters)
         downloadBlob(blob, filename)
-        toast.success(`Historial de ${monthLabel(filters.mes) || 'movimientos'} descargado.`)
+        toast.success(`CSV descargado: ${filename}`)
       } catch (error) {
         toast.error(error?.message || 'No se pudo descargar el historial.')
       } finally {

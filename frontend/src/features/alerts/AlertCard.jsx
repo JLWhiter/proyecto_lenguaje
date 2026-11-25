@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Archive, ArrowRight, Clock, Mail, MailOpen, MoreHorizontal, RotateCcw, Undo2, X } from 'lucide-react'
 import { IconButton, ProgressBar } from '../../components/ui'
-import { formatDateTime } from '../../lib/format'
+import { formatDateTime, formatPercent } from '../../lib/format'
+import { MaskedText } from '../transactions/Money'
+import { useVisibleMoney } from '../transactions/useVisibleMoney'
 import { ActionSheet, MenuButton } from './AlertMenus'
 import { alertTarget, inactiveState, levelOf, ruleOf, SNOOZE_OPTIONS } from './alertModel'
 
@@ -16,9 +18,9 @@ const GHOST_DANGER =
 const GHOST =
   'inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60'
 
+/** 82.46 → '82.5%' · 75 → '75%' · 1292.6 → '1,292.6%' (como los textos del backend, con separador de miles). */
 function percentText(value) {
-  const number = Number(value)
-  return `${Number.isInteger(number) ? number : number.toFixed(1)}%`
+  return formatPercent(value, { digits: 1, minDigits: 0 })
 }
 
 /**
@@ -27,12 +29,14 @@ function percentText(value) {
  * - Acción principal (`accion.label`) → `onOpen(alert)`; el resto → `onAction(alert, action, { hours })`.
  * - Móvil: acción principal + "Más acciones" (hoja inferior). Desde `sm`: todos los botones visibles.
  * - Vista "Todas": las descartadas/pospuestas muestran su estado y "Restaurar".
+ * - "Ocultar montos": los montos del título y la descripción se muestran como "••••".
  */
 export default function AlertCard({ alert, busy = false, focusOnMount = false, onOpen, onAction }) {
   const titleId = useId()
   const articleRef = useRef(null)
   const moreRef = useRef(null)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const { speakText } = useVisibleMoney()
 
   // Tras "Deshacer" la tarjeta vuelve a aparecer: el foco va a su primer botón visible.
   useEffect(() => {
@@ -129,13 +133,15 @@ export default function AlertCard({ alert, busy = false, focusOnMount = false, o
             )}
           </div>
           <h3 id={titleId} className={`mt-2 break-words text-lg leading-snug text-slate-900 sm:text-xl ${unread ? 'font-bold' : 'font-semibold'}`}>
-            {alert.titulo}
+            <MaskedText>{alert.titulo}</MaskedText>
           </h3>
         </div>
       </div>
 
       <div className="mt-3 sm:pl-[52px]">
-        {alert.descripcion && <p className="break-words text-sm leading-6 text-slate-600">{alert.descripcion}</p>}
+        {alert.descripcion && <p className="break-words text-sm leading-6 text-slate-600">
+            <MaskedText>{alert.descripcion}</MaskedText>
+          </p>}
 
         {hasPercent && (
           <div className="mt-4 flex items-center gap-3">
@@ -187,7 +193,7 @@ export default function AlertCard({ alert, busy = false, focusOnMount = false, o
                 <MenuButton
                   label="Posponer"
                   icon={Clock}
-                  menuLabel={`Posponer: ${alert.titulo}`}
+                  menuLabel={`Posponer: ${speakText(alert.titulo)}`}
                   disabled={busy}
                   className={SECONDARY}
                   items={SNOOZE_OPTIONS.map((option) => ({
@@ -239,7 +245,7 @@ export default function AlertCard({ alert, busy = false, focusOnMount = false, o
 
       {sheetOpen && (
         <ActionSheet
-          title={alert.titulo}
+          title={<MaskedText>{alert.titulo}</MaskedText>}
           description={`${level.label} · ${alert.tipo || rule.label}`}
           items={sheetItems}
           onClose={() => setSheetOpen(false)}
@@ -297,7 +303,9 @@ export function AlertUndoRow({ entry, busy = false, onUndo, onClose }) {
       </span>
       <p id={messageId} className="min-w-0 flex-1 basis-48 text-sm">
         <span className="block font-semibold text-slate-900">{entry.message}</span>
-        <span className="block break-words text-slate-500">{entry.alert.titulo}</span>
+        <span className="block break-words text-slate-500">
+          <MaskedText>{entry.alert.titulo}</MaskedText>
+        </span>
       </p>
       <div className="ml-auto flex items-center gap-1">
         <button

@@ -110,35 +110,63 @@ export function matchesFilter(alert, key) {
 
 // --- Navegación ------------------------------------------------------------------
 
+// Etiqueta de la acción que abre directamente el diálogo de edición del presupuesto.
+const EDIT_BUDGET_LABEL = normalize('Ajustar presupuesto')
+
+function hasValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== ''
+}
+
+function toTarget(pathname, params) {
+  const search = params.toString()
+  return { pathname, search: search ? `?${search}` : '' }
+}
+
 /**
- * Destino de la acción principal (`accion`), según las convenciones compartidas:
- * - budget → /app/presupuestos?mes=<mes>&presupuesto=<id>
- * - transaction / transactions → /app/movimientos?mes=<mes o periodo>
- * Devuelve `null` si la alerta no tiene una acción navegable (p. ej. alertas antiguas).
+ * Destino de la acción de una alerta. Única fuente para el Centro de Alertas (`accion`) y el Resumen
+ * (`accion_detalle`). El mes es el de la acción o, si falta, el primero válido de `months`.
+ * - budget → /app/presupuestos?mes=<mes>&presupuesto=<id> (+ `&accion=editar` si es «Ajustar presupuesto»)
+ * - transaction (con id) → /app/movimientos?mes=<mes>&categoria=<categoria>&tipo=GASTO&movimiento=<id>
+ *   (Movimientos resalta ese movimiento; sin `categoria` se omite ese filtro)
+ * - transactions → /app/movimientos?mes=<mes>
+ * Devuelve `null` si la acción no es navegable.
  */
-export function alertTarget(alert) {
-  const action = alert?.accion
-  if (!action?.label) return null
-  const month = [action.mes, alert.periodo].find(isValidMonth)
+export function alertActionTarget(action, ...months) {
+  if (!action || typeof action !== 'object') return null
+  const month = [action.mes, ...months].find(isValidMonth)
   const params = new URLSearchParams()
   if (month) params.set('mes', month)
 
   if (action.type === 'budget') {
-    if (action.id !== null && action.id !== undefined) params.set('presupuesto', String(action.id))
-    return { pathname: '/app/presupuestos', search: `?${params}` }
+    if (hasValue(action.id)) {
+      params.set('presupuesto', String(action.id))
+      if (normalize(action.label) === EDIT_BUDGET_LABEL) params.set('accion', 'editar')
+    }
+    return toTarget('/app/presupuestos', params)
+  }
+  if (action.type === 'transaction' && hasValue(action.id)) {
+    if (hasValue(action.categoria)) params.set('categoria', String(action.categoria).trim())
+    params.set('tipo', 'GASTO')
+    params.set('movimiento', String(action.id))
+    return toTarget('/app/movimientos', params)
   }
   if (action.type === 'transaction' || action.type === 'transactions') {
-    const search = params.toString()
-    return { pathname: '/app/movimientos', search: search ? `?${search}` : '' }
+    return toTarget('/app/movimientos', params)
   }
   return null
+}
+
+/** Destino de la acción principal de una alerta del Centro de Alertas, o `null` (p. ej. alertas antiguas). */
+export function alertTarget(alert) {
+  if (!alert?.accion?.label) return null
+  return alertActionTarget(alert.accion, alert.periodo)
 }
 
 // --- Fechas y períodos -------------------------------------------------------------
 
 const dayKeyFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' })
 
-/** "hoy, 02:30 p. m." · "mañana, 09:00 a. m." · "mié, 2 dic, 10:00 a. m." (hora de Lima). */
+/** "hoy, 14:30" · "mañana, 09:00" · "mié, 2 dic., 10:00" (hora de Lima, 24 horas). */
 export function untilText(value, now = new Date()) {
   const date = new Date(value)
   if (!value || Number.isNaN(date.getTime())) return ''

@@ -1,41 +1,50 @@
 import { useId, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { AlarmClock, Bell, ChevronRight, CircleCheck, Info, OctagonAlert, TriangleAlert, X } from 'lucide-react'
+import { AlarmClock, Bell, ChevronRight, CircleCheck, X } from 'lucide-react'
+import { levelOf } from '../alerts/alertModel'
+import { MaskedText } from '../transactions/Money'
 import { CARD, CARD_TITLE, CardLink } from './DashboardBits'
-import { alertTarget, maskAmountsInText } from './dashboardUtils'
+import { alertTarget } from './dashboardUtils'
 import { useAlertQuickActions } from './useAlertQuickActions'
-import { useDashboardMoney } from './useDashboardMoney'
 
-const LEVELS = {
+// Etiqueta e ícono del nivel salen del Centro de Alertas (`ALERT_LEVELS`): "Urgente", "Advertencia",
+// "Información", "Logro". Aquí solo cambian los colores de la tarjeta compacta del Resumen.
+const LEVEL_STYLES = {
   danger: {
-    label: 'Urgente',
-    Icon: OctagonAlert,
     card: 'border-red-100 border-l-red-500 bg-red-50/60',
     icon: 'bg-red-100 text-red-600',
     badge: 'bg-red-100 text-red-700',
   },
   warning: {
-    label: 'Atención',
-    Icon: TriangleAlert,
     card: 'border-amber-100 border-l-amber-400 bg-amber-50/60',
     icon: 'bg-amber-100 text-amber-700',
     badge: 'bg-amber-100 text-amber-800',
   },
   info: {
-    label: 'Aviso',
-    Icon: Info,
     card: 'border-sky-100 border-l-sky-500 bg-sky-50/60',
     icon: 'bg-sky-100 text-sky-600',
     badge: 'bg-sky-100 text-sky-700',
   },
+  success: {
+    card: 'border-emerald-100 border-l-emerald-500 bg-emerald-50/60',
+    icon: 'bg-emerald-100 text-emerald-600',
+    badge: 'bg-emerald-100 text-emerald-800',
+  },
+}
+
+/** `nivel` (danger|warning|info|success) como en Alertas; `tipo` es el nivel simplificado del resumen. */
+function dashboardLevel(alert) {
+  const key = LEVEL_STYLES[alert.nivel] ? alert.nivel : LEVEL_STYLES[alert.tipo] ? alert.tipo : 'info'
+  const { label, Icon } = levelOf(key)
+  return { ...LEVEL_STYLES[key], label, Icon }
 }
 
 const QUIET_BUTTON =
   'inline-flex min-h-10 items-center gap-1.5 rounded-xl px-2.5 text-sm font-medium text-slate-600 sm:px-3 transition hover:bg-white hover:text-slate-900 disabled:cursor-wait disabled:opacity-60'
 
-function AlertItem({ alert, period, search, hideAmounts, busy, onSnooze, onDismiss }) {
+function AlertItem({ alert, period, search, busy, onSnooze, onDismiss }) {
   const titleId = useId()
-  const level = LEVELS[alert.tipo] ?? LEVELS[alert.nivel] ?? LEVELS.info
+  const level = dashboardLevel(alert)
   const Icon = level.Icon
   const target = alertTarget(alert, period) ?? { pathname: '/app/alertas', search }
   const actionLabel = alert.accion_detalle?.label || alert.accion
@@ -58,10 +67,10 @@ function AlertItem({ alert, period, search, hideAmounts, busy, onSnooze, onDismi
             {alert.tiempo && <span className="whitespace-nowrap text-slate-500">· {alert.tiempo}</span>}
           </div>
           <h3 id={titleId} className="mt-2 break-words text-base font-semibold text-slate-900 sm:mt-1.5">
-            {maskAmountsInText(alert.titulo, hideAmounts)}
+            <MaskedText>{alert.titulo}</MaskedText>
           </h3>
           {alert.descripcion && (
-            <p className="mt-1 break-words text-sm leading-6 text-slate-600">{maskAmountsInText(alert.descripcion, hideAmounts)}</p>
+            <p className="mt-1 break-words text-sm leading-6 text-slate-600"><MaskedText>{alert.descripcion}</MaskedText></p>
           )}
           <div className="mt-3 flex flex-wrap items-center gap-1.5 sm:gap-2">
             {actionLabel && (
@@ -92,7 +101,6 @@ function AlertItem({ alert, period, search, hideAmounts, busy, onSnooze, onDismi
 /** Las 3 alertas activas más importantes, con acciones rápidas. */
 export default function AlertsCard({ data, period, search }) {
   const headingRef = useRef(null)
-  const { hidden } = useDashboardMoney()
   const actions = useAlertQuickActions(data)
   const alerts = (data.alertas_activas ?? []).filter((alert) => !actions.isHandled(alert.id))
   const pending = Math.max(0, (Number(data.alertas_pendientes) || 0) - actions.handledCount, alerts.length)
@@ -114,7 +122,8 @@ export default function AlertsCard({ data, period, search }) {
           </h2>
           {pending > 0 && (
             <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
-              {pending} {pending === 1 ? 'pendiente' : 'pendientes'}
+              {/* Mismo término que el Centro de Alertas ("6 activas · 4 sin leer"); la campana cuenta las sin leer. */}
+              {pending} {pending === 1 ? 'activa' : 'activas'}
             </span>
           )}
         </div>
@@ -129,7 +138,6 @@ export default function AlertsCard({ data, period, search }) {
               alert={alert}
               period={period}
               search={search}
-              hideAmounts={hidden}
               busy={actions.busy}
               onSnooze={after(actions.snooze)}
               onDismiss={after(actions.dismiss)}

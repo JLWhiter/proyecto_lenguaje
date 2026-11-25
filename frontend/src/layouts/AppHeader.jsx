@@ -1,19 +1,25 @@
 import { forwardRef } from 'react'
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import { Bell, Menu } from 'lucide-react'
 import IconButton from '../components/ui/IconButton'
 import { useAuth } from '../context/AuthContext'
 import { usePeriod } from '../context/PeriodContext'
 import { initialsOf } from '../lib/format'
+import { routeUsesPeriod, unreadAlertsLabel } from './navigation'
 import PeriodPicker from './PeriodPicker'
 
-/** Header fijo: menú (solo < lg), marca, selector de período, campana de alertas y avatar. */
+/**
+ * Header fijo: menú (solo < lg), marca, selector de período, campana de alertas (sin leer) y avatar.
+ * El selector de período solo aparece en las pantallas que dependen del mes (ver `routeUsesPeriod`).
+ */
 const AppHeader = forwardRef(function AppHeader({ drawerOpen, onOpenMenu, unreadAlertCount = 0 }, menuButtonRef) {
   const { user } = useAuth()
   const { search } = usePeriod()
+  const { pathname } = useLocation()
+  const showPeriod = routeUsesPeriod(pathname)
   const name = user?.full_name || user?.email || 'Mi cuenta'
   const initials = initialsOf(user?.full_name, user?.email)
-  const alertsLabel = unreadAlertCount > 0 ? `Alertas: ${unreadAlertCount} sin leer` : 'Alertas: ninguna sin leer'
+  const alertsLabel = `Alertas: ${unreadAlertsLabel(unreadAlertCount)}`
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
@@ -41,7 +47,7 @@ const AppHeader = forwardRef(function AppHeader({ drawerOpen, onOpenMenu, unread
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          <PeriodPicker />
+          {showPeriod && <PeriodPicker />}
           <NavLink
             to={{ pathname: '/app/alertas', search }}
             aria-label={alertsLabel}

@@ -26,9 +26,9 @@ function FinanceShell() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const menuButtonRef = useRef(null)
   const { pathname } = useLocation()
-  // Se recarga con invalidate('alerts'): campana (sin leer), drawer y barra inferior (activas).
+  // Se recarga con invalidate('alerts'). Campana, sidebar y barra inferior muestran el MISMO número:
+  // alertas activas sin leer (el total de activas se ve en el Centro de Alertas).
   const alerts = useAlerts()
-  const activeAlertCount = alerts.data?.counts?.activas ?? alerts.data?.items?.length ?? 0
   const unreadAlertCount = alerts.data?.counts?.no_leidas ?? 0
 
   // Al cambiar de pantalla: cerrar el drawer y volver arriba.
@@ -53,7 +53,7 @@ function FinanceShell() {
         unreadAlertCount={unreadAlertCount}
       />
 
-      <SideDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} alertCount={activeAlertCount} />
+      <SideDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} alertCount={unreadAlertCount} />
 
       <main
         id="contenido"
@@ -65,7 +65,7 @@ function FinanceShell() {
         </Suspense>
       </main>
 
-      <BottomNav alertCount={activeAlertCount} />
+      <BottomNav alertCount={unreadAlertCount} />
     </div>
   )
 }

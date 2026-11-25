@@ -1,25 +1,13 @@
 // Piezas pequeñas reutilizadas por las tarjetas del Resumen.
 import { Link } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
-import { HIDDEN_AMOUNT, variationInfo } from './dashboardUtils'
-import { useDashboardMoney } from './useDashboardMoney'
+import { variationInfo } from './dashboardUtils'
+
+// Monto con "Ocultar montos" ('••••' + "Monto oculto" para lectores de pantalla): el mismo de Movimientos.
+export { Amount } from '../transactions/Money'
 
 export const CARD = 'min-w-0 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6'
 export const CARD_TITLE = 'text-xl font-bold text-slate-900 sm:text-2xl'
-
-/** Monto con `tabular-nums`; '••••' (y "Monto oculto" para lectores de pantalla) si los montos están ocultos. */
-export function Amount({ value, signed = false, className = '' }) {
-  const { hidden, text, signedText } = useDashboardMoney()
-  if (hidden) {
-    return (
-      <span className={className}>
-        <span aria-hidden="true">{HIDDEN_AMOUNT}</span>
-        <span className="sr-only">Monto oculto</span>
-      </span>
-    )
-  }
-  return <span className={`tabular-nums ${className}`}>{signed ? signedText(value) : text(value)}</span>
-}
 
 /** Píldora de variación: flecha y color según el signo (y si subir es bueno o malo). */
 export function VariationBadge({ pct, increaseIsGood = true, prefix = '', className = '' }) {

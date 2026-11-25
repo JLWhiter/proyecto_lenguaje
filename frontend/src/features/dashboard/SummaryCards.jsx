@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { Plus, Target, TrendingDown, TrendingUp } from 'lucide-react'
 import { ProgressBar } from '../../components/ui'
 import { formatPercent, toNumber } from '../../lib/format'
-import { monthLabel } from '../../lib/period'
+import { monthPhrase } from '../../lib/period'
 import { Amount, CardLink, VariationBadge } from './DashboardBits'
 import { budgetTone, movementsLink, previousMonthText } from './dashboardUtils'
 
@@ -52,7 +52,7 @@ export function FlowCard({ kind, data, period }) {
       </p>
       <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-500">
         <VariationBadge pct={data[flow.pct]} increaseIsGood={flow.increaseIsGood} />
-        <span>vs {previousMonthText(period)}</span>
+        <span>vs. {previousMonthText(period)}</span>
       </p>
       <div className="mt-auto pt-2">
         <CardLink to={movementsLink(period, { tipo: flow.tipo })}>{flow.link}</CardLink>
@@ -78,7 +78,7 @@ export function BudgetCard({ data, period, search, className = '' }) {
           </span>
         </div>
         <p className="mt-4 text-sm leading-6 text-slate-500">
-          Aún no tienes presupuestos para {monthLabel(period)}. Pon un límite por categoría y te avisaremos antes de pasarte.
+          Aún no tienes presupuestos para {monthPhrase(period)}. Pon un límite por categoría y te avisaremos antes de pasarte.
         </p>
         <div className="mt-auto pt-4">
           <Link

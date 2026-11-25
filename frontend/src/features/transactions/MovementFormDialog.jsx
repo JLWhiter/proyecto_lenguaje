@@ -12,6 +12,8 @@ import { formatDay, isValidDate } from './dates'
  *
  * `fields` puede ser un arreglo o una función `(values) => fields` (campos que dependen de otros).
  * Tipos: text · number · select · date · segmented.
+ * - `options` de un select: `[valor, texto]` o `[valor, texto, nombreAccesible]` (p. ej. con montos ocultos).
+ * - `suggestion` (texto): muestra "¿Quisiste decir «…»?" con un botón que reemplaza el valor.
  */
 export default function MovementFormDialog(props) {
   const { title, description, fields, initialValues = {}, onClose, loading = false, loadError = null, onRetry } = props
@@ -177,7 +179,9 @@ const CONTROL =
 function Field({ id, field, value, error, onChange }) {
   const hintId = `${id}-hint`
   const errorId = `${id}-error`
-  const describedBy = [error ? errorId : null, field.hint ? hintId : null].filter(Boolean).join(' ') || undefined
+  const suggestionId = `${id}-suggestion`
+  const describedBy =
+    [error ? errorId : null, field.suggestion ? suggestionId : null, field.hint ? hintId : null].filter(Boolean).join(' ') || undefined
   const tone = error
     ? 'border-red-300 focus:border-red-400 focus:ring-red-100'
     : 'border-slate-200 focus:border-emerald-500 focus:ring-emerald-500/15'
@@ -253,8 +257,8 @@ function Field({ id, field, value, error, onChange }) {
       {field.type === 'select' ? (
         <select {...common}>
           {(field.options ?? []).length === 0 && <option value="">{field.emptyLabel || 'Sin opciones disponibles'}</option>}
-          {(field.options ?? []).map(([optionValue, optionLabel]) => (
-            <option key={optionValue} value={optionValue}>
+          {(field.options ?? []).map(([optionValue, optionLabel, optionName]) => (
+            <option key={optionValue} value={optionValue} aria-label={optionName}>
               {optionLabel}
             </option>
           ))}
@@ -279,6 +283,26 @@ function Field({ id, field, value, error, onChange }) {
             <option key={option} value={option} />
           ))}
         </datalist>
+      )}
+      {'suggestion' in field && (
+        // Región viva siempre presente: el lector de pantalla anuncia la sugerencia cuando aparece.
+        <div aria-live="polite">
+          {field.suggestion && (
+            <p
+              id={suggestionId}
+              className="mt-2 flex flex-wrap items-center gap-x-2 rounded-xl bg-amber-50 py-0.5 pl-3 pr-1 text-sm text-amber-900"
+            >
+              <span>¿Quisiste decir «{field.suggestion}»?</span>
+              <button
+                type="button"
+                onClick={() => onChange(field.suggestion)}
+                className="inline-flex min-h-10 items-center rounded-lg px-2 font-semibold text-emerald-700 underline-offset-2 hover:underline"
+              >
+                Usar «{field.suggestion}»
+              </button>
+            </p>
+          )}
+        </div>
       )}
       {field.quickPicks?.length > 0 && (
         <div role="group" aria-label={`${field.label}: sugerencias`} className="mt-2 flex flex-wrap gap-1.5">

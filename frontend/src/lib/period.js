@@ -2,6 +2,7 @@
 
 export const APP_TIME_ZONE = 'America/Lima'
 
+// Nombres como se usan en Perú y como los envía el backend: 'Setiembre' / 'Set' (no 'Septiembre' / 'Sep').
 export const MONTH_NAMES = [
   'Enero',
   'Febrero',
@@ -11,7 +12,7 @@ export const MONTH_NAMES = [
   'Junio',
   'Julio',
   'Agosto',
-  'Septiembre',
+  'Setiembre',
   'Octubre',
   'Noviembre',
   'Diciembre',
@@ -53,6 +54,16 @@ export function monthLabel(month, { short = false } = {}) {
   if (!isValidMonth(month)) return ''
   const name = monthName(month)
   return `${short ? name.slice(0, 3) : name} ${month.slice(0, 4)}`
+}
+
+/**
+ * Mes dentro de una frase, en minúscula como se escribe en español:
+ * monthPhrase('2026-11') → 'noviembre 2026'; con { year: false } → 'noviembre'.
+ */
+export function monthPhrase(month, { year = true } = {}) {
+  if (!isValidMonth(month)) return ''
+  const name = monthName(month).toLocaleLowerCase('es')
+  return year ? `${name} ${month.slice(0, 4)}` : name
 }
 
 /** Últimos `count` meses terminando en `until` (incluido), del más reciente al más antiguo. */

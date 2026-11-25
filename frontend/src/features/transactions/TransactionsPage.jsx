@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   ArrowRightLeft,
   CalendarDays,
@@ -12,22 +12,25 @@ import {
   TrendingDown,
   TrendingUp,
   Wallet,
+  X,
 } from 'lucide-react'
 import { EmptyState, ErrorState, Skeleton, SkeletonCard, useConfirm, useToast } from '../../components/ui'
 import { useInvalidate } from '../../context/FinanceDataContext'
 import { usePeriod } from '../../context/PeriodContext'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
-import { useMoney } from '../../hooks/useMoney'
 import { transactionsApi } from '../../lib/api/transactions'
 import { toNumber } from '../../lib/format'
-import { monthName } from '../../lib/period'
+import { monthPhrase } from '../../lib/period'
 import { useAccounts } from '../accounts/useAccounts'
 import { DepositDialog, TransactionDialog, TransferDialog } from './TransactionDialogs'
 import TransactionFilters from './TransactionFilters'
+import { Amount } from './Money'
 import TransactionList, { TransactionDetailSheet } from './TransactionList'
+import { useMovementFocus } from './useMovementFocus'
 import { useExportTransactions } from './useExportTransactions'
 import { useTransactionFilters } from './useTransactionFilters'
 import { MONEY_MOVEMENT_TAGS, PAGE_SIZE, useCategories, useTransactionFeed } from './useTransactions'
+import { useVisibleMoney } from './useVisibleMoney'
 
 const PRIMARY_BUTTON =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#10B981] px-4 text-sm font-semibold text-white shadow-sm shadow-emerald-200 transition hover:bg-[#059669] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none'
@@ -50,6 +53,7 @@ function openPeriodPicker() {
   }
 }
 
+/** Textos del diálogo de eliminar. `money` respeta "Ocultar montos" ('••••'). */
 function deleteRequest(item, money) {
   const amount = money(Math.abs(toNumber(item.monto)))
   if (item.kind === 'TRANSFER') {
@@ -113,9 +117,13 @@ function SummarySkeleton() {
 export default function TransactionsPage() {
   useDocumentTitle('Movimientos')
   const { period, label: periodLabel } = usePeriod()
-  const { money, signedMoney } = useMoney()
+  const periodPhrase = monthPhrase(period)
+  const { text: money } = useVisibleMoney()
   const filters = useTransactionFilters()
   const feed = useTransactionFeed(filters.apiFilters)
+  // ?movimiento=<id> (enlace de una alerta): se resalta esa fila y se quita el parámetro de la URL.
+  const [searchParams] = useSearchParams()
+  const focus = useMovementFocus(searchParams.get('movimiento'), feed, filters.setFilter)
   const accounts = useAccounts()
   const categories = useCategories()
   const invalidate = useInvalidate()
@@ -172,15 +180,15 @@ export default function TransactionsPage() {
         : count === 0
           ? filters.hasFilters
             ? 'Ningún movimiento coincide con los filtros.'
-            : `Sin movimientos en ${periodLabel}.`
+            : `Sin movimientos en ${periodPhrase}.`
           : `${plural(count, 'movimiento', 'movimientos')}${filters.hasFilters ? ' con estos filtros' : ''}${
               feed.loaded < count ? ` · mostrando ${feed.loaded}` : ''
             }`
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      {/* Encabezado + acciones */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      {/* Encabezado + acciones. En columna hasta xl: con el sidebar (1024 px) no caben en una fila y "Depositar" quedaba solo. */}
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">Movimientos</h1>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-slate-500">
@@ -198,7 +206,8 @@ export default function TransactionsPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center lg:justify-end">
+        {/* Móvil: "Nueva transacción" a todo el ancho y debajo Transferir | Depositar. Desde sm: una sola fila. */}
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center xl:shrink-0 xl:justify-end">
           <button
             type="button"
             onClick={() => setDialog({ type: 'transaction' })}
@@ -229,6 +238,39 @@ export default function TransactionsPage() {
           </button>
         </div>
       </div>
+
+      {/* Enlace de una alerta (?movimiento=<id>) cuyo movimiento no está en la lista: aviso visible arriba. */}
+      {focus.missing && (
+        <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-amber-200 bg-amber-50 py-1 pl-4 pr-1 text-sm text-amber-900">
+          <FileSearch className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 flex-1 basis-56 py-2">
+            {feed.hasMore
+              ? 'El movimiento de la alerta no está entre los que se muestran. Puede estar más abajo.'
+              : `No encontramos el movimiento de la alerta en ${periodPhrase}${filters.hasFilters ? ' con estos filtros' : ''}: puede que se haya editado o eliminado.`}
+          </span>
+          <span className="flex items-center gap-1">
+            {feed.hasMore ? (
+              <button type="button" onClick={feed.loadMore} className="inline-flex min-h-10 items-center rounded-lg px-2 font-semibold text-amber-900 underline">
+                Cargar más
+              </button>
+            ) : (
+              filters.hasFilters && (
+                <button type="button" onClick={filters.clearFilters} className="inline-flex min-h-10 items-center rounded-lg px-2 font-semibold text-amber-900 underline">
+                  Quitar filtros
+                </button>
+              )
+            )}
+            <button
+              type="button"
+              onClick={focus.dismiss}
+              aria-label="Cerrar aviso"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-amber-900 hover:bg-amber-100"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </span>
+        </div>
+      )}
 
       {/* Requisitos de cuentas, con texto visible (un title no se ve en pantallas táctiles). */}
       {noAccounts ? (
@@ -270,11 +312,17 @@ export default function TransactionsPage() {
       ) : feed.status === 'ready' ? (
         <section aria-label="Totales del período" className={`transition-opacity ${feed.stale ? 'opacity-60' : ''}`}>
           <div className="grid divide-y divide-slate-100 rounded-[24px] border border-slate-200 bg-white shadow-sm sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-            <Stat label="Ingresos" value={money(ingresos)} caption={`Total ${monthName(period)}`} icon={TrendingUp} tone={ingresos > 0 ? 'emerald' : 'slate'} />
-            <Stat label="Gastos" value={money(gastos > 0 ? -gastos : 0)} caption="Ejecutado" icon={TrendingDown} tone={gastos > 0 ? 'red' : 'slate'} />
+            <Stat
+              label="Ingresos"
+              value={<Amount value={ingresos} />}
+              caption={`Total de ${monthPhrase(period, { year: false })}`}
+              icon={TrendingUp}
+              tone={ingresos > 0 ? 'emerald' : 'slate'}
+            />
+            <Stat label="Gastos" value={<Amount value={gastos > 0 ? -gastos : 0} />} caption="Ejecutado" icon={TrendingDown} tone={gastos > 0 ? 'red' : 'slate'} />
             <Stat
               label="Neto"
-              value={signedMoney(neto)}
+              value={<Amount value={neto} signed />}
               caption="Ingresos − gastos"
               icon={Wallet}
               tone={neto > 0 ? 'emerald' : neto < 0 ? 'red' : 'slate'}
@@ -313,8 +361,8 @@ export default function TransactionsPage() {
           ) : (
             <Download className="h-4 w-4" aria-hidden="true" />
           )}
-          {exporting ? 'Preparando…' : 'Descargar historial'}
-          <span className="sr-only">(CSV{filters.hasFilters ? ', con los filtros aplicados' : ''})</span>
+          {exporting ? 'Preparando…' : `Descargar CSV de ${periodPhrase}`}
+          {filters.hasFilters && <span className="sr-only"> (con los filtros aplicados)</span>}
         </button>
       </div>
 
@@ -358,7 +406,7 @@ export default function TransactionsPage() {
               <EmptyState
                 icon={FileSearch}
                 title="Sin resultados"
-                description={`Ningún movimiento de ${periodLabel} coincide con los filtros elegidos.`}
+                description={`Ningún movimiento de ${periodPhrase} coincide con los filtros elegidos.`}
                 action={
                   <button type="button" onClick={filters.clearFilters} className={SECONDARY_BUTTON}>
                     Limpiar filtros
@@ -368,7 +416,7 @@ export default function TransactionsPage() {
             ) : (
               <EmptyState
                 icon={ReceiptText}
-                title={`No hay movimientos en ${periodLabel}`}
+                title={`No hay movimientos en ${periodPhrase}`}
                 description={
                   noAccounts
                     ? 'Crea tu primera cuenta y luego registra tus ingresos y gastos.'
@@ -394,6 +442,7 @@ export default function TransactionsPage() {
               <TransactionList
                 groups={feed.groups}
                 busyId={busyId}
+                highlightId={focus.highlightId}
                 onOpen={(item) => setDialog({ type: 'detail', item })}
                 onEdit={(item) => setDialog({ type: 'edit', item })}
                 onDelete={removeMovement}

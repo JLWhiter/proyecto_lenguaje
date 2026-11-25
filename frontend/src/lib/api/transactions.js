@@ -119,7 +119,9 @@ export const transactionsApi = {
     return apiRequest('/transacciones/depositar/', { method: 'POST', body: payload })
   },
   /**
-   * CSV con los movimientos que cumplen los filtros → `{ blob, filename }`.
+   * CSV de un mes con los movimientos que cumplen los filtros → `{ blob, filename }`.
+   * `filename` es el del backend (Content-Disposition). Solo si el navegador no deja leer esa cabecera
+   * (API en otro dominio sin exponerla) se usa el mismo patrón que el backend: finova-transacciones-AAAA-MM.csv.
    * Usa fetch directo porque los errores llegan como texto CSV y hay que leerlos.
    */
   async exportCsv(filters = {}) {

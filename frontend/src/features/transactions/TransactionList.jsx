@@ -15,9 +15,10 @@ import {
   Trash2,
 } from 'lucide-react'
 import { IconButton, Modal } from '../../components/ui'
-import { useMoney } from '../../hooks/useMoney'
 import { toNumber } from '../../lib/format'
 import { formatLongDay } from './dates'
+import { Amount } from './Money'
+import { useVisibleMoney } from './useVisibleMoney'
 
 // Íconos que envía el backend en `icon` (shopping, car, home, health, gamepad, briefcase, income, transfer, adjust).
 const ICONS = {
@@ -100,9 +101,77 @@ function amountTone(value) {
   return number > 0 ? 'text-emerald-600' : number < 0 ? 'text-red-600' : 'text-slate-600'
 }
 
-/** Lista agrupada por día, tal como la entrega el backend (HOY, AYER, 23 NOV 2026…). */
-export default function TransactionList({ groups, onOpen, onEdit, onDelete, busyId }) {
-  const { signedMoney } = useMoney()
+function MovementRow({ item, busy, highlighted, onOpen, onEdit, onDelete }) {
+  const { signedText, speakSigned } = useVisibleMoney()
+  return (
+    <li
+      data-movement-id={item.id}
+      className={`flex items-center gap-1 rounded-2xl py-1 transition-colors duration-700 sm:gap-2 ${
+        highlighted ? 'bg-amber-50 ring-2 ring-amber-300' : ''
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => onOpen(item)}
+        aria-haspopup="dialog"
+        aria-label={`${item.nombre}, ${speakSigned(item.monto)}, ${item.categoria || ''}, ${item.cuenta || item.subtexto || ''}, ${item.hora}. Ver detalle y acciones`}
+        className="flex min-h-14 min-w-0 flex-1 items-center gap-2.5 rounded-2xl px-1 py-2 text-left sm:gap-3 transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-emerald-500 sm:px-2"
+      >
+        <MovementIcon item={item} />
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-start justify-between gap-2">
+            <span className="min-w-0 break-words font-semibold leading-5 text-slate-900">
+              {item.nombre}
+            </span>
+            <span className={`shrink-0 whitespace-nowrap text-[15px] font-bold leading-5 tabular-nums sm:text-base ${amountTone(item.monto)}`}>
+              {signedText(item.monto)}
+            </span>
+          </span>
+          <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+            <span className="min-w-0 truncate">{item.cuenta || item.subtexto}</span>
+            <span aria-hidden="true">·</span>
+            <span className="tabular-nums">{item.hora}</span>
+            <CategoryBadge item={item} />
+            <KindBadge item={item} />
+          </span>
+        </span>
+        <ChevronRight className="-ml-1 h-4 w-4 shrink-0 text-slate-300 sm:hidden" aria-hidden="true" />
+      </button>
+
+      {/* Desde sm: acciones visibles. En móvil se usan desde la hoja de detalle (tap en la fila). */}
+      <div className="hidden shrink-0 items-center gap-1 sm:flex">
+        {item.editable ? (
+          <IconButton label={`Editar ${item.nombre}`} variant="ghost" onClick={() => onEdit(item)}>
+            <Pencil className="h-4 w-4" />
+          </IconButton>
+        ) : (
+          <span className="h-10 w-10" aria-hidden="true" />
+        )}
+        {item.eliminable ? (
+          <IconButton
+            label={`Eliminar ${item.nombre}`}
+            variant="ghost"
+            className="hover:bg-red-50! hover:text-red-600!"
+            disabled={busy}
+            onClick={() => onDelete(item)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </IconButton>
+        ) : (
+          <span className="h-10 w-10" aria-hidden="true" />
+        )}
+      </div>
+    </li>
+  )
+}
+
+/**
+ * Lista agrupada por día, tal como la entrega el backend (HOY, AYER, 23 NOV 2026…).
+ * - Respeta "Ocultar montos" (filas, totales del día y textos para lectores de pantalla).
+ * - `highlightId`: movimiento resaltado unos segundos (p. ej. al llegar desde una alerta).
+ *   Cada fila lleva `data-movement-id` para poder desplazarse hasta ella.
+ */
+export default function TransactionList({ groups, onOpen, onEdit, onDelete, busyId, highlightId = null }) {
 
   return (
     <div className="space-y-4">
@@ -118,65 +187,21 @@ export default function TransactionList({ groups, onOpen, onEdit, onDelete, busy
             </h2>
             <p className={`text-sm font-bold tabular-nums ${amountTone(group.total)}`}>
               <span className="sr-only">Total del día: </span>
-              {signedMoney(group.total)}
+              <Amount value={group.total} signed />
             </p>
           </header>
 
           <ul className="divide-y divide-slate-100">
             {group.items.map((item) => (
-              <li key={item.id} className="flex items-center gap-1 py-1 sm:gap-2">
-                <button
-                  type="button"
-                  onClick={() => onOpen(item)}
-                  aria-haspopup="dialog"
-                  aria-label={`${item.nombre}, ${signedMoney(item.monto)}, ${item.categoria || ''}, ${item.cuenta || item.subtexto || ''}, ${item.hora}. Ver detalle y acciones`}
-                  className="flex min-h-14 min-w-0 flex-1 items-center gap-2.5 rounded-2xl px-1 py-2 text-left sm:gap-3 transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-emerald-500 sm:px-2"
-                >
-                  <MovementIcon item={item} />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex min-w-0 items-start justify-between gap-2">
-                      <span className="min-w-0 break-words font-semibold leading-5 text-slate-900">
-                        {item.nombre}
-                      </span>
-                      <span className={`shrink-0 whitespace-nowrap text-[15px] font-bold leading-5 tabular-nums sm:text-base ${amountTone(item.monto)}`}>
-                        {signedMoney(item.monto)}
-                      </span>
-                    </span>
-                    <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-                      <span className="min-w-0 truncate">{item.cuenta || item.subtexto}</span>
-                      <span aria-hidden="true">·</span>
-                      <span className="tabular-nums">{item.hora}</span>
-                      <CategoryBadge item={item} />
-                      <KindBadge item={item} />
-                    </span>
-                  </span>
-                  <ChevronRight className="-ml-1 h-4 w-4 shrink-0 text-slate-300 sm:hidden" aria-hidden="true" />
-                </button>
-
-                {/* Desde sm: acciones visibles. En móvil se usan desde la hoja de detalle (tap en la fila). */}
-                <div className="hidden shrink-0 items-center gap-1 sm:flex">
-                  {item.editable ? (
-                    <IconButton label={`Editar ${item.nombre}`} variant="ghost" onClick={() => onEdit(item)}>
-                      <Pencil className="h-4 w-4" />
-                    </IconButton>
-                  ) : (
-                    <span className="h-10 w-10" aria-hidden="true" />
-                  )}
-                  {item.eliminable ? (
-                    <IconButton
-                      label={`Eliminar ${item.nombre}`}
-                      variant="ghost"
-                      className="hover:bg-red-50! hover:text-red-600!"
-                      disabled={busyId === item.id}
-                      onClick={() => onDelete(item)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </IconButton>
-                  ) : (
-                    <span className="h-10 w-10" aria-hidden="true" />
-                  )}
-                </div>
-              </li>
+              <MovementRow
+                key={item.id}
+                item={item}
+                busy={busyId === item.id}
+                highlighted={highlightId !== null && String(item.id) === String(highlightId)}
+                onOpen={onOpen}
+                onEdit={onEdit}
+                onDelete={onDelete}
+              />
             ))}
           </ul>
         </section>
@@ -195,7 +220,6 @@ const LOCKED_REASONS = {
 
 /** Hoja de detalle con acciones (en móvil es la forma principal de editar/eliminar). */
 export function TransactionDetailSheet({ item, onClose, onEdit, onDelete }) {
-  const { signedMoney } = useMoney()
   const reason = !item.editable ? LOCKED_REASONS[item.kind] : null
   const rows = [
     ['Fecha', formatLongDay(item.occurred_at) || item.fecha],
@@ -248,7 +272,9 @@ export function TransactionDetailSheet({ item, onClose, onEdit, onDelete }) {
       <div className="flex items-center gap-3">
         <MovementIcon item={item} />
         <div className="min-w-0">
-          <p className={`text-2xl font-bold tabular-nums ${amountTone(item.monto)}`}>{signedMoney(item.monto)}</p>
+          <p className={`text-2xl font-bold tabular-nums ${amountTone(item.monto)}`}>
+            <Amount value={item.monto} signed />
+          </p>
           <div className="mt-1 flex flex-wrap gap-1.5">
             <CategoryBadge item={item} />
             <KindBadge item={item} />

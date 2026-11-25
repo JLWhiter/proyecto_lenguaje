@@ -8,12 +8,13 @@ import { DESKTOP_QUERY, useMediaQuery } from '../hooks/useMediaQuery'
 import { useBodyScrollLock, useFocusTrap } from '../hooks/useFocusTrap'
 import { useMoney } from '../hooks/useMoney'
 import { initialsOf } from '../lib/format'
-import { DRAWER_NAV } from './navigation'
+import { DRAWER_NAV, unreadAlertsLabel } from './navigation'
 
 /**
  * Navegación lateral.
  * - < lg: drawer modal (overlay, foco atrapado, Escape, inerte cuando está cerrado).
  * - ≥ lg: sidebar persistente.
+ * `alertCount`: alertas sin leer (el mismo número que la campana del header).
  */
 export default function SideDrawer({ open, onClose, alertCount }) {
   const isDesktop = useMediaQuery(DESKTOP_QUERY)
@@ -100,9 +101,9 @@ export default function SideDrawer({ open, onClose, alertCount }) {
                   {item.label}
                 </span>
                 {item.badge === 'alerts' && alertCount > 0 && (
-                  <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
-                    <span className="sr-only">Alertas activas: </span>
-                    {alertCount}
+                  <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold tabular-nums text-white">
+                    <span aria-hidden="true">{alertCount > 99 ? '99+' : alertCount}</span>
+                    <span className="sr-only"> ({unreadAlertsLabel(alertCount)})</span>
                   </span>
                 )}
               </NavLink>

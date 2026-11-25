@@ -13,7 +13,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react'
 import { toNumber } from '../../lib/format'
-import { monthLabel } from '../../lib/period'
+import { monthPhrase } from '../../lib/period'
 import { Amount, CARD, CARD_TITLE, CardLink } from './DashboardBits'
 import { movementsLink, movementWhen } from './dashboardUtils'
 
@@ -101,7 +101,7 @@ function MovementRow({ item }) {
 /** Últimos 4 movimientos del período. */
 export default function RecentTransactions({ data, period, canRegister, onRegister }) {
   const items = Array.isArray(data.ultimas_transacciones) ? data.ultimas_transacciones : []
-  const periodText = monthLabel(period)
+  const periodText = monthPhrase(period)
 
   return (
     <section aria-labelledby="recent-title" className={CARD}>

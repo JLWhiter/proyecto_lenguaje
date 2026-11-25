@@ -4,14 +4,15 @@ import { Landmark } from 'lucide-react'
 import { Modal, useToast } from '../../components/ui'
 import { useInvalidate } from '../../context/FinanceDataContext'
 import { usePeriod } from '../../context/PeriodContext'
-import { useMoney } from '../../hooks/useMoney'
 import { transactionsApi } from '../../lib/api/transactions'
 import { toNumber } from '../../lib/format'
-import { monthLabel } from '../../lib/period'
+import { monthPhrase } from '../../lib/period'
 import { accountOptions, useAccounts } from '../accounts/useAccounts'
 import { dateOfMovement, defaultMovementDate, occurredAtFromDate, todayInLima } from './dates'
 import MovementFormDialog from './MovementFormDialog'
+import { similarCategory } from './categoryMatch'
 import { MONEY_MOVEMENT_TAGS, useCategories } from './useTransactions'
+import { useVisibleMoney } from './useVisibleMoney'
 
 const TYPE_OPTIONS = [
   ['GASTO', 'Gasto'],
@@ -19,14 +20,23 @@ const TYPE_OPTIONS = [
 ]
 const QUICK_PICKS = 5
 
-/** Estado de carga de la lista de cuentas (solo activas) para los <select> de los diálogos. */
+/**
+ * Estado de carga de la lista de cuentas (solo activas) para los <select> de los diálogos.
+ * Opciones `[id, 'BCP Cuenta Sueldo · S/ 13,542.61']`; con "Ocultar montos": `'… · ••••'` y,
+ * como tercer elemento, el nombre accesible ('BCP Cuenta Sueldo, monto oculto').
+ */
 function useAccountSelect() {
   const accounts = useAccounts()
-  const { money, symbol } = useMoney()
+  const { text, hidden, symbol } = useVisibleMoney()
   const list = useMemo(() => (accounts.data?.accounts ?? []).filter((account) => !account.archivada), [accounts.data])
+  const options = useMemo(() => {
+    const base = accountOptions(list, text)
+    if (!hidden) return base
+    return base.map(([value, label], index) => [value, label, `${list[index].nombre}, monto oculto`])
+  }, [list, text, hidden])
   return {
     list,
-    options: accountOptions(list, money),
+    options,
     symbol,
     ready: accounts.status === 'ready',
     loading: accounts.status === 'loading',
@@ -35,14 +45,22 @@ function useAccountSelect() {
   }
 }
 
-/** Nombres de categoría para un tipo (INGRESO/GASTO), ordenados por uso. Si falla la carga, no hay sugerencias. */
+/**
+ * Nombres de categoría para un tipo (INGRESO/GASTO), ordenados por uso, y la categoría existente que se
+ * parece a lo escrito (solo cambian tildes, mayúsculas o espacios). Si falla la carga, no hay sugerencias.
+ */
 function useCategoryNames() {
   const categories = useCategories()
   const list = categories.data?.categorias ?? []
-  return (type) =>
+  const namesFor = (type) =>
     list
       .filter((category) => !type || !category.tipos?.length || category.tipos.includes(type))
       .map((category) => category.nombre)
+  return {
+    namesFor,
+    // Primero entre las del mismo tipo; si no, en todo el catálogo.
+    similarTo: (typed, type) => similarCategory(typed, namesFor(type)) ?? similarCategory(typed, namesFor()),
+  }
 }
 
 /** occurred_at a enviar: nada si es hoy (el backend usa "ahora"); si no, ese día con la hora actual de Lima. */
@@ -54,7 +72,7 @@ function occurredAtForNew(date) {
 /** Aviso si el movimiento quedó fuera del mes que se está viendo (no aparecerá en la lista). */
 function periodNote(date, period) {
   const month = (date || todayInLima()).slice(0, 7)
-  return month !== period ? ` Quedó en ${monthLabel(month)}.` : ''
+  return month !== period ? ` Quedó en ${monthPhrase(month)}.` : ''
 }
 
 /** Diálogo informativo cuando no hay cuentas suficientes para la operación. */
@@ -100,7 +118,7 @@ export function TransactionDialog({ initialValues = {}, transaction, onClose, on
   const invalidate = useInvalidate()
   const toast = useToast()
   const accounts = useAccountSelect()
-  const categoryNames = useCategoryNames()
+  const categories = useCategoryNames()
   const editing = Boolean(transaction)
   const today = todayInLima()
 
@@ -136,7 +154,8 @@ export function TransactionDialog({ initialValues = {}, transaction, onClose, on
   }
 
   const fields = (values) => {
-    const names = categoryNames(values.type || original?.type)
+    const type = values.type || original?.type
+    const names = categories.namesFor(type)
     return [
       {
         name: 'type',
@@ -157,6 +176,8 @@ export function TransactionDialog({ initialValues = {}, transaction, onClose, on
         placeholder: 'Escribe o elige una categoría',
         suggestions: names,
         quickPicks: names.slice(0, QUICK_PICKS),
+        // "alimentacion" → «¿Quisiste decir «Alimentación»?» con un botón para usarla.
+        suggestion: categories.similarTo(values.category, type),
       },
       { name: 'account_id', label: 'Cuenta', type: 'select', options: accountChoices, required: true },
     ]

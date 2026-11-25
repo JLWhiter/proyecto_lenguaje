@@ -1,8 +1,11 @@
 import { NavLink } from 'react-router-dom'
 import { usePeriod } from '../context/PeriodContext'
-import { BOTTOM_NAV } from './navigation'
+import { BOTTOM_NAV, unreadAlertsLabel } from './navigation'
 
-/** Barra inferior (solo < lg). Etiquetas cortas para que quepa en 360 px; respeta el área segura del iPhone. */
+/**
+ * Barra inferior (solo < lg). Etiquetas cortas para que quepa en 360 px; respeta el área segura del iPhone.
+ * `alertCount`: alertas sin leer (el mismo número que la campana del header).
+ */
 export default function BottomNav({ alertCount }) {
   const { search } = usePeriod()
 
@@ -20,7 +23,7 @@ export default function BottomNav({ alertCount }) {
               <NavLink
                 to={{ pathname: item.to, search }}
                 end={item.end}
-                aria-label={showBadge ? `${item.label}: ${alertCount} activas` : item.label}
+                aria-label={showBadge ? `${item.label}: ${unreadAlertsLabel(alertCount)}` : item.label}
                 className={({ isActive }) =>
                   `flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 rounded-2xl px-1 py-1.5 text-[11px] font-semibold leading-tight transition ${
                     isActive ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:text-slate-700'
@@ -30,7 +33,7 @@ export default function BottomNav({ alertCount }) {
                 <span className="relative inline-flex h-5 w-5 items-center justify-center">
                   <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
                   {showBadge && (
-                    <span aria-hidden="true" className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-white" />
+                    <span aria-hidden="true" className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-600 ring-2 ring-white" />
                   )}
                 </span>
                 <span aria-hidden="true" className="block max-w-full truncate">
