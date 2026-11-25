@@ -17,6 +17,8 @@ class DashboardSummarySerializer(serializers.Serializer):
     presupuesto_consumido = serializers.DecimalField(max_digits=12, decimal_places=2)
     presupuesto_restante = serializers.DecimalField(max_digits=12, decimal_places=2)
     evolucion_saldo = serializers.ListField(child=serializers.DictField())
+    evolucion_periodo = serializers.CharField(allow_blank=True)
+    evolucion_tendencia = serializers.CharField()
     distribucion_gastos = serializers.ListField(child=serializers.DictField())
     alertas_activas = serializers.ListField(child=serializers.DictField())
     ultimas_transacciones = serializers.ListField(child=serializers.DictField())
@@ -28,6 +30,12 @@ class TransactionFilterSerializer(serializers.Serializer):
     categoria = serializers.CharField(required=False, allow_blank=True)
     cuenta_id = serializers.IntegerField(required=False, allow_null=True)
     mes = serializers.CharField(required=False, allow_blank=True)
+
+
+class IncomeTaxQuerySerializer(serializers.Serializer):
+    anio = serializers.IntegerField(required=False, min_value=2000, max_value=2100)
+    ingreso_anual = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, min_value=0)
+    deducciones_adicionales = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, min_value=0, default=0)
 
 
 class TransactionCreateSerializer(serializers.Serializer):

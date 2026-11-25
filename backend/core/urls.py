@@ -9,6 +9,7 @@ from .views import (
     BudgetListView,
     DashboardResumenView,
     DepositView,
+    IncomeTaxView,
     RebalanceBudgetView,
     SilenceAlertsView,
     TransactionListView,
@@ -34,4 +35,5 @@ urlpatterns = [
     path("alertas/", AlertListView.as_view(), name="alertas"),
     path("alertas/<int:pk>/accion/", AlertActionView.as_view(), name="alerta-accion"),
     path("alertas/silenciar-todo/", SilenceAlertsView.as_view(), name="alertas-silenciar-todo"),
+    path("impuestos/renta/", IncomeTaxView.as_view(), name="impuestos-renta"),
 ]

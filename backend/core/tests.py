@@ -216,3 +216,82 @@ class FinanceApiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("text/csv", response["Content-Type"])
+
+    def create_movement(self, account, name, category, amount, kind, occurred_at):
+        response = self.client.post(
+            "/api/v1/transacciones/",
+            {"name": name, "category": category, "amount": amount, "type": kind, "account_id": account.id, "occurred_at": occurred_at},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+
+    def test_dashboard_charts_are_built_from_real_movements(self):
+        self.authenticate()
+        account = FinanceAccount.objects.create(owner=self.user, name="Principal", account_type="Ahorros", balance=Decimal("500.00"))
+        self.create_movement(account, "Sueldo", "Salario", "3000.00", "INGRESO", "2024-04-10T12:00:00Z")
+        self.create_movement(account, "Mercado", "Alimentación", "300.00", "GASTO", "2024-05-02T12:00:00Z")
+        self.create_movement(account, "Taxi", "Transporte", "100.00", "GASTO", "2024-05-03T12:00:00Z")
+
+        response = self.client.get("/api/v1/dashboard/resumen/?mes=2024-05")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [(point["periodo"], point["value"]) for point in response.data["evolucion_saldo"]],
+            [("2024-03", 500.0), ("2024-04", 3500.0), ("2024-05", 3100.0)],
+        )
+        self.assertEqual(response.data["evolucion_periodo"], "Mar 24 - May 24")
+        self.assertEqual(response.data["evolucion_tendencia"], "+520.0%")
+        self.assertEqual(
+            [(item["name"], item["value"]) for item in response.data["distribucion_gastos"]],
+            [("Alimentación", 75.0), ("Transporte", 25.0)],
+        )
+
+    def test_transactions_can_be_filtered_by_category_type_and_search(self):
+        self.authenticate()
+        account = FinanceAccount.objects.create(owner=self.user, name="Principal", account_type="Ahorros", balance=Decimal("1000.00"))
+        self.create_movement(account, "Supermercado", "Alimentación", "50.00", "GASTO", "2024-05-02T12:00:00Z")
+        self.create_movement(account, "Menú", "ALIMENTACIÓN", "15.00", "GASTO", "2024-05-03T12:00:00Z")
+        self.create_movement(account, "Taxi", "Transporte", "20.00", "GASTO", "2024-05-04T12:00:00Z")
+        self.create_movement(account, "Bono", "Salario", "200.00", "INGRESO", "2024-05-05T12:00:00Z")
+
+        def search(**filters):
+            response = self.client.get("/api/v1/transacciones/", {"mes": "2024-05", **filters})
+            self.assertEqual(response.status_code, 200)
+            items = [item for group in response.data["grupos"] for item in group["items"]]
+            total = sum((group["total"] for group in response.data["grupos"]), Decimal("0.00"))
+            return sorted(item["nombre"] for item in items), total
+
+        self.assertEqual(search(categoria="alimentación"), (["Menú", "Supermercado"], Decimal("-65.00")))
+        self.assertEqual(search(tipo="INGRESO"), (["Bono"], Decimal("200.00")))
+        self.assertEqual(search(search="taxi"), (["Taxi"], Decimal("-20.00")))
+        self.assertEqual(search(categoria="alimentación", search="menú"), (["Menú"], Decimal("-15.00")))
+        self.assertEqual(search(), (["Bono", "Menú", "Supermercado", "Taxi"], Decimal("115.00")))
+
+    def test_income_tax_uses_registered_income_of_the_year(self):
+        self.authenticate()
+        account = FinanceAccount.objects.create(owner=self.user, name="Principal", account_type="Ahorros", balance=Decimal("0.00"))
+        self.create_movement(account, "Sueldo 2025", "Salario", "60000.00", "INGRESO", "2025-06-30T12:00:00Z")
+        self.create_movement(account, "Sueldo 2024", "Salario", "1000.00", "INGRESO", "2024-06-30T12:00:00Z")
+
+        response = self.client.get("/api/v1/impuestos/renta/", {"anio": 2025})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["fuente"], "movimientos")
+        self.assertEqual(response.data["ingreso_bruto"], Decimal("60000.00"))
+        self.assertEqual(response.data["renta_neta"], Decimal("22550.00"))
+        self.assertEqual(response.data["impuesto"], Decimal("1804.00"))
+        self.assertEqual(len(response.data["tramos"]), 1)
+
+    def test_income_tax_accepts_manual_income_and_validates_input(self):
+        self.authenticate()
+
+        response = self.client.get("/api/v1/impuestos/renta/", {"anio": 2025, "ingreso_anual": "150000"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["fuente"], "manual")
+        self.assertEqual(response.data["impuesto"], Decimal("14318.50"))
+        self.assertEqual(self.client.get("/api/v1/impuestos/renta/", {"anio": 2001}).status_code, 400)
+        self.assertEqual(self.client.get("/api/v1/impuestos/renta/", {"ingreso_anual": "-5"}).status_code, 400)
+
+    def test_income_tax_requires_authentication(self):
+        self.assertEqual(self.client.get("/api/v1/impuestos/renta/").status_code, 401)

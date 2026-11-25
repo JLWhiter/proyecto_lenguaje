@@ -83,6 +83,13 @@ const formatSignedCurrency = (value) => {
 
 const formatExact = (value) => `${value.toFixed(2)}%`
 
+function describeBalancePeriod(dashboard) {
+  const months = dashboard.evolucion_saldo.length
+  if (!months) return 'Sin movimientos registrados'
+  const range = months === 1 ? 'Último mes' : `Últimos ${months} meses`
+  return dashboard.evolucion_periodo ? `${range} (${dashboard.evolucion_periodo})` : range
+}
+
 async function loadFinovaData(budgetMonth = '2024-05') {
   const [dashboard, transactions, budgets, accounts, alerts] = await Promise.allSettled([
     finovaApi.getDashboard({ mes: budgetMonth }),
@@ -474,10 +481,10 @@ export default function FinovaDashboardPage() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h3 className="text-2xl font-bold text-slate-900">Evolución de Saldo</h3>
-                  <p className="mt-1 text-sm text-slate-500">Últimos 6 meses (Dic 23 - May 24)</p>
+                  <p className="mt-1 text-sm text-slate-500">{describeBalancePeriod(data.dashboard)}</p>
                 </div>
-                <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                  Tendencia {data.dashboard.evolucion_saldo.length > 0 ? '+28%' : '0%'}
+                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${String(data.dashboard.evolucion_tendencia).startsWith('-') ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                  Tendencia {data.dashboard.evolucion_tendencia || '0.0%'}
                 </span>
               </div>
 
@@ -507,7 +514,9 @@ export default function FinovaDashboardPage() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h3 className="text-2xl font-bold text-slate-900">Distribución de Gastos</h3>
-                  <p className="mt-1 text-sm text-slate-500">Total mayo: {formatCurrency(data.dashboard.gastos_mensuales)}</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Total {new Intl.DateTimeFormat('es-PE', { month: 'long', timeZone: 'UTC' }).format(new Date(`${budgetMonth}-01T00:00:00Z`))}: {formatCurrency(data.dashboard.gastos_mensuales)}
+                  </p>
                 </div>
                 <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
                   {data.dashboard.distribucion_gastos.length} Categorías

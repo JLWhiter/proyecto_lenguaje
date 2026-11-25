@@ -2,6 +2,7 @@ import csv
 from decimal import Decimal
 import re
 
+from django.conf import settings
 from django.db import transaction as db_transaction
 from django.db.models import Sum
 from django.http import HttpResponse, JsonResponse
@@ -12,6 +13,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from . import analytics
 from .finance import (
     empty_dashboard_payload,
     finance_totals,
@@ -34,10 +36,13 @@ from .serializers import (
     BudgetSerializer,
     DepositSerializer,
     DashboardSummarySerializer,
+    IncomeTaxQuerySerializer,
     TransactionCreateSerializer,
     TransactionFilterSerializer,
     TransferSerializer,
 )
+from .taxes import income_tax, uit_for_year
+from .transaction_filters import filter_transactions, total_amount
 
 
 def health(request):
@@ -64,6 +69,8 @@ def build_dashboard_payload():
             {"name": "Abr", "value": 7800},
             {"name": "May", "value": 8450},
         ],
+        "evolucion_periodo": "Dic 23 - May 24",
+        "evolucion_tendencia": "+65.7%",
         "distribucion_gastos": [
             {"name": "Alimentación", "value": 35, "color": "#ef4444"},
             {"name": "Vivienda", "value": 25, "color": "#10b981"},
@@ -413,7 +420,10 @@ class DashboardResumenView(FinanceAPIView):
         data["presupuesto_consumido"] = total_spent
         data["presupuesto_restante"] = total_limit - total_spent
         data["presupuesto_porcentaje"] = float(total_spent / total_limit * 100) if total_limit else 0
-        alert_type = {"rojo": "danger", "amber": "warning", "indigo": "info", "green": "info"}
+        if not use_sample_data:
+            records = FinanceTransaction.objects.filter(owner=request.user).values(*analytics.FIELDS)
+            data.update(analytics.dashboard_charts(records, month, balance, settings.TIME_ZONE))
+        alert_type ={"rojo": "danger", "amber": "warning", "indigo": "info", "green": "info"}
         data["alertas_activas"] = [
             {
                 "id": alert.id,
@@ -450,37 +460,28 @@ class TransactionListView(FinanceAPIView):
         }
         if not use_sample_data or month != "2024-05":
             data["grupos"] = []
-        search = params.get("search", "").casefold()
-        transaction_type = params.get("tipo")
-        category = params.get("categoria", "").casefold()
+        search = params.get("search", "")
+        transaction_type = params.get("tipo", "")
+        category = params.get("categoria", "")
         selected_account = None
         if params.get("cuenta_id"):
             selected_account = get_object_or_404(FinanceAccount, pk=params["cuenta_id"], owner=request.user)
 
+        sample_account_filter = []
+        if selected_account:
+            account_name = selected_account.name.casefold()
+            sample_account_filter.append(lambda item: account_name in item["subtexto"].casefold())
         for group in data["grupos"]:
-            group["items"] = [
-                item for item in group["items"]
-                if (not search or search in item["nombre"].casefold() or search in item["categoria"].casefold())
-                and (not transaction_type or item["tipo"] == transaction_type)
-                and (not category or category in item["categoria"].casefold())
-                and (not selected_account or selected_account.name.casefold() in item["subtexto"].casefold())
-            ]
-            group["total"] = sum((item["monto"] for item in group["items"]), Decimal("0.00"))
+            group["items"] = filter_transactions(group["items"], search, transaction_type, category, extra=sample_account_filter)
+            group["total"] = total_amount(group["items"])
         data["grupos"] = [group for group in data["grupos"] if group["items"]]
 
         added = FinanceTransaction.objects.filter(owner=request.user, occurred_at__year=int(month[:4]), occurred_at__month=int(month[5:7]))
-        if transaction_type:
-            added = added.filter(transaction_type=transaction_type)
-        if category:
-            added = added.filter(category__icontains=category)
-        if search:
-            added = added.filter(name__icontains=search) | added.filter(category__icontains=search)
         if selected_account:
             added = added.filter(account=selected_account)
-
-        new_items = [serialize_transaction(item) for item in added.select_related("account")]
+        new_items = filter_transactions(map(serialize_transaction, added.select_related("account")), search, transaction_type, category)
         if new_items:
-            data["grupos"].insert(0, {"titulo": "NUEVOS MOVIMIENTOS", "total": sum((item["monto"] for item in new_items), Decimal("0.00")), "items": new_items})
+            data["grupos"].insert(0, {"titulo": "NUEVOS MOVIMIENTOS", "total": total_amount(new_items), "items": new_items})
         added_income, added_expenses = finance_totals(request.user, month)
         base_income = Decimal("5800.00") if use_sample_data and month == "2024-05" else Decimal("0.00")
         base_expenses = Decimal("3250.00") if use_sample_data and month == "2024-05" else Decimal("0.00")
@@ -752,3 +753,52 @@ class TransactionExportView(FinanceAPIView):
             amount = item.amount if item.transaction_type == FinanceTransaction.Type.INCOME else -item.amount
             writer.writerow([item.occurred_at.strftime("%Y-%m-%d %H:%M"), item.name, item.category, item.transaction_type, account_name, f"{amount:.2f}", item.status])
         return response
+
+
+class IncomeTaxView(FinanceAPIView):
+    """Estimación del Impuesto a la Renta anual de quinta categoría.
+
+    Usa ``ingreso_anual`` si se envía; si no, suma los ingresos registrados en el año.
+    """
+
+    def get(self, request):
+        self.prepare_user_data(request.user)
+        query = IncomeTaxQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        values = query.validated_data
+        year = values.get("anio", timezone.localdate().year)
+        try:
+            uit = uit_for_year(year)
+        except ValueError as error:
+            return Response({"anio": [str(error)]}, status=status.HTTP_400_BAD_REQUEST)
+
+        if "ingreso_anual" in values:
+            gross, source = values["ingreso_anual"], "manual"
+        else:
+            incomes = FinanceTransaction.objects.filter(
+                owner=request.user,
+                transaction_type=FinanceTransaction.Type.INCOME,
+                status__in=analytics.SUMMARY_STATUSES,
+                count_in_summary=True,
+                occurred_at__year=year,
+            )
+            gross, source = incomes.aggregate(total=Sum("amount"))["total"] or Decimal("0.00"), "movimientos"
+
+        result = income_tax(gross, uit, values["deducciones_adicionales"])
+        return Response(
+            {
+                "anio": year,
+                "uit": result.uit,
+                "fuente": source,
+                "ingreso_bruto": result.gross_income,
+                "deducciones": result.deductions,
+                "renta_neta": result.net_income,
+                "impuesto": result.tax,
+                "tasa_efectiva": result.effective_rate,
+                "tramos": [
+                    {"desde": item.lower, "hasta": item.upper, "tasa": item.rate * 100, "base": item.taxable, "impuesto": item.tax}
+                    for item in result.brackets
+                ],
+                "nota": "Estimación de rentas de quinta categoría. No incluye retenciones, créditos ni otras rentas.",
+            }
+        )

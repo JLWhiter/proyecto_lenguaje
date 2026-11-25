@@ -27,6 +27,8 @@ export const fallbackData = {
       { name: 'Abr', value: 7800 },
       { name: 'May', value: 8450 },
     ],
+    evolucion_periodo: 'Dic 23 - May 24',
+    evolucion_tendencia: '+65.7%',
     distribucion_gastos: [
       { name: 'Alimentación', value: 35, color: '#ef4444' },
       { name: 'Vivienda', value: 25, color: '#10b981' },
@@ -388,6 +390,8 @@ export const emptyFinanceData = {
     presupuesto_consumido: 0,
     presupuesto_restante: 0,
     evolucion_saldo: [],
+    evolucion_periodo: '',
+    evolucion_tendencia: '0.0%',
     distribucion_gastos: [],
     alertas_activas: [],
     ultimas_transacciones: [],

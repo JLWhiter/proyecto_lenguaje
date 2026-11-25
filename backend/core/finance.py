@@ -26,6 +26,8 @@ def empty_dashboard_payload():
         "presupuesto_consumido": Decimal("0.00"),
         "presupuesto_restante": Decimal("0.00"),
         "evolucion_saldo": [],
+        "evolucion_periodo": "",
+        "evolucion_tendencia": "0.0%",
         "distribucion_gastos": [],
         "alertas_activas": [],
         "ultimas_transacciones": [],
