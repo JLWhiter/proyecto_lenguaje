@@ -113,8 +113,8 @@ def evaluate_alerts(user, period=None, *, today=None, now=None):
         expired = FinanceAlert.objects.filter(owner=user, rule__in=ENGINE_RULES, period__lt=alerts.window_periods(today)[0])
         expired.exclude(period="").delete()
         AlertEvaluation.objects.bulk_create(
-            [AlertEvaluation(owner=user, period=period, evaluated_at=now)],
-            update_conflicts=True, unique_fields=["owner", "period"], update_fields=["evaluated_at"],
+            [AlertEvaluation(owner=user, period=period, evaluated_at=now, currency=currency)],
+            update_conflicts=True, unique_fields=["owner", "period"], update_fields=["evaluated_at", "currency"],
         )
     return plan
 
@@ -135,11 +135,19 @@ def ensure_alerts(user, period=None, *, today=None, now=None):
     periods = alerts.lazy_periods(period, today)
     if not periods:
         return []
-    marks = dict(AlertEvaluation.objects.filter(owner=user, period__in=periods).values_list("period", "evaluated_at"))
+    currency = getattr(user, "currency", "PEN")
+    marks = {
+        period: (evaluated_at, evaluated_currency)
+        for period, evaluated_at, evaluated_currency in AlertEvaluation.objects.filter(
+            owner=user, period__in=periods
+        ).values_list("period", "evaluated_at", "currency")
+    }
     stale = [
         period
         for period in periods
-        if alerts.needs_evaluation(period, timezone.localtime(marks[period]).date() if period in marks else None, today)
+        if period not in marks
+        or marks[period][1] != currency
+        or alerts.needs_evaluation(period, timezone.localtime(marks[period][0]).date(), today)
     ]
     for period in stale:
         evaluate_alerts(user, period, today=today, now=now)

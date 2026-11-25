@@ -7,6 +7,7 @@ Normal < 75 % ≤ Precaución < 90 % ≤ Crítico ≤ 100 % < Excedido.
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
+from .money import money
 from .periods import days_in_period, period_of
 
 CENT = Decimal("0.01")
@@ -60,13 +61,13 @@ def projected_spending(spent, period, today):
     return (spent / today.day * days_in_period(period)).quantize(CENT, rounding=ROUND_HALF_UP)
 
 
-def budget_detail(remaining, projection, period, today):
+def budget_detail(remaining, projection, period, today, currency="PEN"):
     """Frase corta que acompaña a cada presupuesto en la lista."""
     current = period_of(today)
     if period > current:
         return "El período aún no empieza."
     if period == current:
-        return f"Proyección a fin de mes: S/ {projection:,.2f}"
+        return f"Proyección a fin de mes: {money(projection, currency)}"
     if remaining >= 0:
-        return f"Mes cerrado con S/ {remaining:,.2f} sin usar."
-    return f"Mes cerrado con S/ {-remaining:,.2f} de exceso."
+        return f"Mes cerrado con {money(remaining, currency)} sin usar."
+    return f"Mes cerrado con {money(-remaining, currency)} de exceso."

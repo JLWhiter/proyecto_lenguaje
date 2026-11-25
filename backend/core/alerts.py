@@ -30,6 +30,7 @@ import numpy as np
 from django.db.models import TextChoices
 
 from .budgets import CAUTION, CRITICAL, EXCEEDED, budget_state, projected_spending, usage_percentage
+from .money import CURRENCY_SYMBOLS, money  # noqa: F401  (money se reexporta para las pruebas)
 from .periods import days_remaining, first_day, period_label, period_of, shift_month, short_date
 from .transaction_filters import normalize_text
 
@@ -42,7 +43,6 @@ STRONG_ATYPICAL_SIGMAS = 3
 PROJECTION_FROM_DAY = 5
 NEGATIVE_MONTH_AFTER_DAY = 20
 WINDOW_MONTHS = 2
-CURRENCY_SYMBOLS = {"PEN": "S/", "USD": "$", "EUR": "€"}
 
 
 class AlertRule(TextChoices):
@@ -138,13 +138,6 @@ class SyncPlan:
 
 
 # --- Formato -----------------------------------------------------------------
-
-def money(amount, currency="PEN"):
-    """Decimal('1234.5') -> 'S/ 1,234.50' (símbolo según la moneda del usuario)."""
-    symbol = CURRENCY_SYMBOLS.get(currency, "S/")
-    sign = "-" if amount < 0 else ""
-    return f"{sign}{symbol} {abs(Decimal(amount)):,.2f}"
-
 
 def percent_text(value):
     """82.46 -> '82.5'; 75.0 -> '75' (mismo redondeo a un decimal que el porcentaje de los presupuestos)."""

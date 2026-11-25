@@ -291,6 +291,15 @@ class LazyEvaluationTests(AlertAPITestCase):
 
         self.assertEqual(self.threshold_alerts().get().level, AlertLevel.DANGER)
 
+    def test_changing_currency_rewrites_alert_texts(self):
+        ensure_alerts(self.user)
+        self.user.currency = "USD"
+        self.user.save(update_fields=["currency"])
+
+        self.alerts()
+
+        self.assertIn("Llevas $ 80.00 de $ 100.00", self.threshold_alerts().get().description)
+
     def test_fresh_alert_list_uses_three_queries(self):
         self.alerts()
 

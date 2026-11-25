@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from .alerts import AlertLevel, AlertRule
 from .exceptions import OperacionNoPermitidaError, SaldoInsuficienteError
+from .money import money
 from .periods import PERIOD_ERROR, PERIOD_REGEX, current_period, period_bounds
 from .transaction_filters import normalize_text
 
@@ -69,7 +70,12 @@ class FinanceAccount(models.Model):
 
     class Meta:
         ordering = ["id"]
-        constraints = [models.UniqueConstraint("owner", Lower("name"), name="unique_finance_account_name_per_owner")]
+        # Las cuentas archivadas no reservan su nombre: se puede crear otra "Yape".
+        constraints = [
+            models.UniqueConstraint(
+                "owner", Lower("name"), condition=Q(is_archived=False), name="unique_active_account_name_per_owner"
+            )
+        ]
 
     def __str__(self):
         return f"{self.name} ({self.owner_id})"
@@ -154,7 +160,8 @@ class FinanceAccount(models.Model):
                 closed, _ = closable.delete()
             if not closed:
                 raise OperacionNoPermitidaError(
-                    "Solo puedes eliminar una cuenta con saldo S/ 0.00. Transfiere o ajusta su saldo primero."
+                    f"Solo puedes eliminar una cuenta con saldo {money(0, self.owner.currency)}. "
+                    "Transfiere o ajusta su saldo primero."
                 )
         return has_history
 
@@ -372,7 +379,8 @@ class FinanceBudget(models.Model):
         available = self.limit_amount - spent
         if amount > available:
             raise OperacionNoPermitidaError(
-                f"No hay saldo disponible suficiente para rebalancear: {self.category} tiene S/ {max(available, Decimal('0')):,.2f} libres."
+                f"No hay saldo disponible suficiente para rebalancear: {self.category} tiene "
+                f"{money(max(available, Decimal('0')), self.owner.currency)} libres."
             )
         with db_transaction.atomic():
             FinanceBudget.objects.filter(pk=self.pk).update(limit_amount=Round(F("limit_amount") - amount, 2), updated_at=timezone.now())
@@ -444,6 +452,8 @@ class AlertEvaluation(models.Model):
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="alert_evaluations")
     period = models.CharField(max_length=7)
     evaluated_at = models.DateTimeField()
+    # Moneda con la que se redactaron los textos; si el usuario la cambia, se reevalúa.
+    currency = models.CharField(max_length=3, default="PEN")
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["owner", "period"], name="unique_alert_evaluation_per_period")]

@@ -124,3 +124,23 @@ class AccountEditAndDeleteTests(FinanceAPITestCase):
         )
         self.assertEqual(rejected.data["account_id"], ["La cuenta no existe o está archivada."])
         self.assertEqual(self.client.patch(f"{API}/cuentas/{account.id}/", {"name": "X"}, format="json").status_code, 404)
+
+
+class AccountNameAndCurrencyTests(FinanceAPITestCase):
+    def test_archived_account_name_can_be_reused(self):
+        account = self.open_account(name="Yape", balance="10.00")
+        account.withdraw(Decimal("10.00"), name="Retiro", category="Otros")
+        account.close()
+
+        response = self.client.post(f"{API}/cuentas/", {"name": "yape", "account_type": "Billetera digital"}, format="json")
+
+        self.assertEqual(response.status_code, 201, response.data)
+
+    def test_delete_message_uses_the_user_currency(self):
+        self.user.currency = "USD"
+        self.user.save(update_fields=["currency"])
+        account = self.open_account(balance="10.00")
+
+        response = self.client.delete(f"{API}/cuentas/{account.id}/")
+
+        self.assertIn("saldo $ 0.00", response.data["detail"])

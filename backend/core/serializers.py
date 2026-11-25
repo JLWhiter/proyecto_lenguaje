@@ -130,7 +130,7 @@ class AccountSerializer(serializers.Serializer):
     icon = serializers.ChoiceField(choices=ACCOUNT_ICONS, default="credit")
 
     def validate_name(self, value):
-        accounts = FinanceAccount.objects.filter(owner=self.context["request"].user)
+        accounts = FinanceAccount.objects.active().filter(owner=self.context["request"].user)
         if self.instance is not None:
             accounts = accounts.exclude(pk=self.instance.pk)
         if first_matching(accounts, "name", value):

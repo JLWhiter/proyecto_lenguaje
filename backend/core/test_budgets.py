@@ -44,6 +44,10 @@ class ProjectionTests(unittest.TestCase):
         self.assertEqual(budget_detail(Decimal("-20"), Decimal("0"), "2026-10", TODAY), "Mes cerrado con S/ 20.00 de exceso.")
         self.assertEqual(budget_detail(Decimal("0"), Decimal("0"), "2026-12", TODAY), "El período aún no empieza.")
 
+    def test_detail_text_uses_the_user_currency(self):
+        self.assertEqual(budget_detail(Decimal("50"), Decimal("1385"), "2026-11", TODAY, "USD"), "Proyección a fin de mes: $ 1,385.00")
+        self.assertEqual(budget_detail(Decimal("-20"), Decimal("0"), "2026-10", TODAY, "EUR"), "Mes cerrado con € 20.00 de exceso.")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -154,7 +154,7 @@ def spent_by_category(user, month):
     return spent
 
 
-def serialize_budget(budget, spent, today):
+def serialize_budget(budget, spent, today, currency="PEN"):
     percentage = usage_percentage(spent, budget.limit_amount)
     state = budget_state(percentage)
     remaining = budget.limit_amount - spent
@@ -173,14 +173,15 @@ def serialize_budget(budget, spent, today):
         "badge": state.badge,
         "color": state.color,
         "proyeccion": projection,
-        "detalle": budget_detail(remaining, projection, budget.month, today),
+        "detalle": budget_detail(remaining, projection, budget.month, today, currency),
         "icon": budget.icon,
     }
 
 
 def serialize_budgets(budgets, user, month, today):
     spent = spent_by_category(user, month)
-    return [serialize_budget(budget, spent.get(normalize_text(budget.category), ZERO), today) for budget in budgets]
+    currency = getattr(user, "currency", "PEN")
+    return [serialize_budget(budget, spent.get(normalize_text(budget.category), ZERO), today, currency) for budget in budgets]
 
 
 def budget_items(user, month, today):
