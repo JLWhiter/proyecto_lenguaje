@@ -1,312 +1,356 @@
-import { useMemo, useState } from 'react'
-import {
-  Activity,
-  CalendarDays,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  MoreVertical,
-  PiggyBank,
-  Plus,
-  Sparkles,
-  Target,
-  TrendingDown,
-  Wallet,
-} from 'lucide-react'
-import CategoryIcon from '../../components/finance/CategoryIcon'
-import { EmptyState, ErrorState, FilterChips, IconButton, PageSkeleton, parseCountLabel, ProgressBar } from '../../components/ui'
-import { usePeriod, useShiftPeriod } from '../../context/PeriodContext'
+import { useMemo, useRef, useState } from 'react'
+import { ArrowRightLeft, ChevronLeft, ChevronRight, Copy, Plus, RotateCw, SearchX, Target } from 'lucide-react'
+import { EmptyState, ErrorState, FilterChips, IconButton, Skeleton } from '../../components/ui'
+import { usePeriod } from '../../context/PeriodContext'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
-import { useMoney } from '../../hooks/useMoney'
-import { formatPercent } from '../../lib/format'
-import { useExportTransactions } from '../transactions/useExportTransactions'
-import { AdjustBudgetDialog, BudgetDialog, RebalanceDialog } from './BudgetDialogs'
-import { useBudgets } from './useBudgets'
+import { monthLabel, shiftMonth } from '../../lib/period'
+import BudgetCard from './BudgetCard'
+import { BudgetFormDialog, RebalanceDialog } from './BudgetDialogs'
+import { BUDGET_STATES, FILTER_ALL, freeMargin, lastPlannableMonth, movementsSearch, periodPhase, stateOf, stylesFor } from './budgetModel'
+import BudgetSummary from './BudgetSummary'
+import MonthInsight from './MonthInsight'
+import { useBudgetActions, useBudgetHighlight, useBudgets } from './useBudgets'
 
-// Clave de filtro (texto del backend sin contador) → color del presupuesto.
-const FILTER_COLORS = { Normal: 'green', Precaución: 'amber', Crítico: 'red' }
+const PRIMARY_BUTTON =
+  'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#10B981] px-4 py-2 text-center text-sm font-semibold leading-5 text-white shadow-sm shadow-emerald-200 hover:bg-[#059669] aria-disabled:cursor-wait aria-disabled:opacity-60'
+const SECONDARY_BUTTON =
+  'inline-flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-center text-sm font-semibold leading-5 text-slate-700 hover:bg-slate-50 aria-disabled:cursor-wait aria-disabled:opacity-60'
 
-const COLOR_STYLES = {
-  red: { icon: 'bg-red-50 text-red-600', badge: 'bg-red-100 text-red-700', text: 'text-red-600', bar: 'bg-red-500' },
-  amber: { icon: 'bg-amber-50 text-amber-600', badge: 'bg-amber-100 text-amber-700', text: 'text-amber-600', bar: 'bg-amber-500' },
-  green: { icon: 'bg-emerald-50 text-emerald-600', badge: 'bg-emerald-100 text-emerald-700', text: 'text-emerald-600', bar: 'bg-emerald-500' },
-}
-
-function statusLabel(percentage) {
-  if (percentage >= 90) return '• Crítico'
-  if (percentage >= 75) return '• Precaución'
-  return '• En control'
+const PHASE_BADGE = {
+  past: { label: 'Mes cerrado', className: 'bg-slate-100 text-slate-600' },
+  current: { label: 'Mes en curso', className: 'bg-emerald-50 text-emerald-700' },
+  future: { label: 'Planificación', className: 'bg-sky-50 text-sky-700' },
 }
 
 export default function BudgetsPage() {
   useDocumentTitle('Presupuestos')
-  const { period, label: periodLabel } = usePeriod()
-  const shiftPeriod = useShiftPeriod()
-  const { money } = useMoney()
-  const budgets = useBudgets(period)
-  const { exportCsv } = useExportTransactions()
-  const [filter, setFilter] = useState('Todos')
-  const [insightDismissed, setInsightDismissed] = useState(false)
-  const [dialog, setDialog] = useState(null)
+  const { period, setPeriod, label: periodLabel, search, defaultPeriod } = usePeriod()
+  const phase = periodPhase(period, defaultPeriod)
+  const previousMonth = shiftMonth(period, -1)
+  const previousLabel = monthLabel(previousMonth)
+  const lastMonth = lastPlannableMonth(defaultPeriod)
+  const canGoNext = period < lastMonth
 
+  const budgets = useBudgets(period)
+  const actions = useBudgetActions({ period, periodLabel })
+  const [filter, setFilter] = useState(FILTER_ALL)
+  const [dialog, setDialog] = useState(null)
+  const listTitleRef = useRef(null)
+  const closeDialog = () => setDialog(null)
+
+  const ready = budgets.status === 'ready'
   const data = budgets.data
-  const categories = data?.categorias ?? []
-  const filterOptions = useMemo(
-    () => (data?.filtros ?? []).map((text) => ({ key: parseCountLabel(text).key, label: text })),
-    [data?.filtros],
-  )
-  const visible = categories.filter((item) => !FILTER_COLORS[filter] || item.color === FILTER_COLORS[filter])
-  const summary = data?.summary
+  const items = useMemo(() => data?.categorias ?? [], [data])
+  const isEmpty = ready && items.length === 0
+  const canRebalance = items.length >= 2 && phase !== 'past'
+
+  // Solo se pide el mes anterior cuando este está vacío (para ofrecer copiarlo).
+  const previous = useBudgets(previousMonth, { enabled: isEmpty })
+  const previousCount = previous.status === 'ready' && previous.data ? (previous.data.categorias ?? []).length : null
+
+  const highlightId = useBudgetHighlight({
+    items,
+    ready,
+    periodLabel,
+    onReveal: (budget) => {
+      if (filter !== FILTER_ALL && stateOf(budget) !== filter) setFilter(FILTER_ALL)
+    },
+  })
+
+  const counts = useMemo(() => {
+    const result = { [FILTER_ALL]: items.length }
+    for (const state of BUDGET_STATES) result[state.key] = 0
+    for (const item of items) result[stateOf(item)] = (result[stateOf(item)] ?? 0) + 1
+    return result
+  }, [items])
+
+  const filterOptions = [
+    { key: FILTER_ALL, label: <ChipLabel text="Todos" count={counts[FILTER_ALL]} /> },
+    ...BUDGET_STATES.map((state) => ({
+      key: state.key,
+      label: <ChipLabel text={state.label} count={counts[state.key]} dot={stylesFor(state.key).dot} />,
+    })),
+  ]
+  const visible = filter === FILTER_ALL ? items : items.filter((item) => stateOf(item) === filter)
+  const activeFilterLabel = BUDGET_STATES.find((state) => state.key === filter)?.label
+
+  function openCreate() {
+    setDialog({ type: 'form' })
+  }
+
+  function openRebalance(initial = null) {
+    setDialog({ type: 'rebalance', initial })
+  }
+
+  function openMoveFor(budget) {
+    // Con margen libre, este presupuesto cede saldo; sin margen, lo recibe del que más tenga.
+    openRebalance(freeMargin(budget) > 0 ? { source: budget.nombre } : { target: budget.nombre })
+  }
+
+  async function handleDelete(budget) {
+    const deleted = await actions.remove(budget)
+    if (deleted) listTitleRef.current?.focus({ preventScroll: true })
+  }
+
+  const copying = actions.pending?.type === 'copy'
+  const applying = actions.pending?.type === 'apply'
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">GESTIÓN DE FINANZAS</p>
-          <h1 className="mt-2 text-3xl font-bold text-slate-900">Presupuestos Mensuales</h1>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-3xl font-bold text-slate-900">Presupuestos</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+            Define cuánto quieres gastar por categoría cada mes. Lo gastado se calcula con los gastos que registras en Movimientos.
+          </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setDialog({ type: 'budget' })}
-          className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-[#10B981] px-4 py-3 text-sm font-semibold text-white hover:bg-[#059669] sm:self-auto"
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          Nuevo Presupuesto
-        </button>
+        {!isEmpty && (
+          <button type="button" onClick={openCreate} className={`${PRIMARY_BUTTON} shrink-0 self-start whitespace-nowrap sm:self-auto`}>
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Nuevo presupuesto
+          </button>
+        )}
       </div>
 
-      <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-center justify-between gap-2 text-slate-700 sm:justify-center sm:gap-4">
-          <IconButton label="Mes anterior" onClick={() => shiftPeriod(-1)}>
-            <ChevronLeft className="h-4 w-4" />
-          </IconButton>
-          <div className="flex min-w-0 items-center gap-2 text-lg font-semibold" aria-live="polite">
-            <CalendarDays className="h-5 w-5 shrink-0 text-emerald-600" aria-hidden="true" />
-            <span className="truncate">{periodLabel}</span>
+      <div className="rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <IconButton label={`Ir a ${previousLabel}`} onClick={() => setPeriod(previousMonth)}>
+              <ChevronLeft className="h-4 w-4" />
+            </IconButton>
+            <div className="min-w-0 flex-1 text-center md:flex-none md:text-left" aria-live="polite">
+              <p className="truncate text-lg font-semibold text-slate-900">{periodLabel}</p>
+              <span className={`mt-0.5 inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${PHASE_BADGE[phase].className}`}>
+                {PHASE_BADGE[phase].label}
+              </span>
+            </div>
+            <IconButton
+              label={canGoNext ? `Ir a ${monthLabel(shiftMonth(period, 1))}` : `Puedes planificar hasta ${monthLabel(lastMonth)}`}
+              onClick={() => setPeriod(shiftMonth(period, 1))}
+              disabled={!canGoNext}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </IconButton>
           </div>
-          <span className="hidden rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 sm:inline">Período seleccionado</span>
-          <IconButton label="Mes siguiente" onClick={() => shiftPeriod(1)}>
-            <ChevronRight className="h-4 w-4" />
-          </IconButton>
+
+          {ready && items.length > 0 && (phase !== 'past' || canRebalance) && (
+            <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap md:justify-end">
+              {phase !== 'past' && (
+                <button
+                  type="button"
+                  onClick={() => !copying && actions.copyFrom(previousMonth)}
+                  aria-disabled={copying || undefined}
+                  className={SECONDARY_BUTTON}
+                  title={`Copia los presupuestos de ${previousLabel} que aún no tengas en ${periodLabel}`}
+                >
+                  <Copy className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{copying ? 'Copiando…' : `Copiar de ${previousLabel}`}</span>
+                </button>
+              )}
+              {canRebalance && (
+                <button type="button" onClick={() => openRebalance()} className={SECONDARY_BUTTON}>
+                  <ArrowRightLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span className="truncate">Mover saldo</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
+        {phase === 'past' && ready && items.length > 0 && (
+          <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+            Estás viendo un mes cerrado: sirve de referencia. Puedes corregir límites, pero las sugerencias y el rebalanceo solo aplican al mes en curso o a
+            los que planificas.
+          </p>
+        )}
       </div>
 
-      {budgets.status === 'loading' && <PageSkeleton title={false} stats={0} blocks={3} label="Cargando presupuestos" />}
+      {budgets.status === 'loading' && <BudgetsSkeleton />}
 
       {budgets.status === 'error' && (
         <ErrorState title="No pudimos cargar tus presupuestos" error={budgets.error} onRetry={budgets.reload} />
       )}
 
-      {budgets.status === 'ready' && (
+      {ready && budgets.error && (
+        <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          <span>No pudimos actualizar tus presupuestos; puede que veas datos de hace un momento.</span>
+          <button type="button" onClick={budgets.reload} className="inline-flex min-h-10 items-center gap-1.5 font-semibold text-amber-900 hover:underline">
+            <RotateCw className="h-4 w-4" aria-hidden="true" />
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {isEmpty && (
+        <EmptyState
+          icon={Target}
+          title={`Aún no tienes presupuestos para ${periodLabel}`}
+          description={
+            previousCount > 0
+              ? `En ${previousLabel} tenías ${previousCount === 1 ? '1 presupuesto' : `${previousCount} presupuestos`}. Cópialos para empezar con los mismos límites o crea uno nuevo.`
+              : previousCount === 0
+                ? `${previousLabel} tampoco tiene presupuestos. Crea uno por categoría para controlar cuánto gastas.`
+                : 'Crea un presupuesto por categoría para controlar cuánto gastas, o copia los del mes anterior.'
+          }
+          action={
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:justify-center">
+              {previousCount !== 0 && (
+                <button
+                  type="button"
+                  onClick={() => !copying && actions.copyFrom(previousMonth)}
+                  aria-disabled={copying || undefined}
+                  className={PRIMARY_BUTTON}
+                >
+                  <Copy className="h-4 w-4" aria-hidden="true" />
+                  {copying ? 'Copiando…' : `Copiar presupuestos de ${previousLabel}`}
+                </button>
+              )}
+              <button type="button" onClick={openCreate} className={previousCount === 0 ? PRIMARY_BUTTON : SECONDARY_BUTTON}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Crear presupuesto
+              </button>
+            </div>
+          }
+          className="py-10"
+        />
+      )}
+
+      {ready && items.length > 0 && (
         <>
-          <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="budget-summary-title">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-                  <Wallet className="h-5 w-5" aria-hidden="true" />
-                </div>
-                <h2 id="budget-summary-title" className="text-lg font-semibold text-slate-900">
-                  Consumo Total del Mes
-                </h2>
-              </div>
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                {statusLabel(summary.porcentaje)} ({formatPercent(summary.porcentaje)})
-              </span>
-            </div>
-
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <div className="min-w-0">
-                <p className="text-sm text-slate-500">Gasto Total Acumulado</p>
-                <p className="mt-2 break-words text-2xl font-bold text-slate-900">{money(summary.total_consumido)}</p>
-              </div>
-              <div className="min-w-0 text-right md:text-left">
-                <p className="text-sm text-slate-500">Presupuesto Asignado</p>
-                <p className="mt-2 break-words text-2xl font-bold text-slate-900 md:text-right">{money(summary.total_asignado)}</p>
-              </div>
-            </div>
-
-            <ProgressBar
-              value={summary.porcentaje}
-              label="Consumo total del mes"
-              className="mt-5 h-3 bg-amber-100"
-              barClassName="bg-gradient-to-r from-amber-400 to-orange-500"
+          <div className={`grid gap-6 ${data?.ia_alert?.titulo ? 'xl:grid-cols-2' : ''}`}>
+            <BudgetSummary summary={data.summary} phase={phase} count={items.length} periodLabel={periodLabel} />
+            <MonthInsight
+              insight={data.ia_alert}
+              canApply={phase !== 'past' && items.length >= 2}
+              applying={applying}
+              onApply={(action) => !applying && actions.applySuggestion(action)}
+              onAdjust={(action) => openRebalance({ source: action.source_category, target: action.target_category, amount: action.amount })}
             />
-
-            <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
-              <span>Consumido: {formatPercent(summary.porcentaje)}</span>
-              <span>Quedan {summary.dias_restantes} días</span>
-            </div>
-
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm">
-              <div className="flex items-center gap-2 text-emerald-700">
-                <PiggyBank className="h-4 w-4" aria-hidden="true" />
-                <span>Dinero Restante Disponible:</span>
-              </div>
-              <span className="text-lg font-bold text-emerald-700">{money(summary.restante)}</span>
-            </div>
-          </section>
-
-          {categories.length > 0 && !insightDismissed && (
-            <div className="rounded-[28px] border border-amber-200 bg-amber-50 p-4 shadow-sm">
-              <div className="flex items-start gap-3">
-                <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
-                  <Sparkles className="h-4 w-4" aria-hidden="true" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                    <h3 className="text-lg font-semibold text-slate-900">Alerta de Ritmo de Gasto</h3>
-                    <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">IA Finova</span>
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-700">{data.ia_alert?.resumen}</p>
-                  <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-                    <button
-                      type="button"
-                      onClick={() => setDialog({ type: 'rebalance' })}
-                      className="min-h-10 font-semibold text-slate-700 underline underline-offset-2"
-                    >
-                      Rebalancear Presupuesto
-                    </button>
-                    <span className="text-slate-400" aria-hidden="true">
-                      •
-                    </span>
-                    <button type="button" onClick={() => setInsightDismissed(true)} className="min-h-10 font-medium text-slate-500 hover:text-slate-700">
-                      Descartar
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {filterOptions.length > 0 && (
-            <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
-              <FilterChips label="Filtrar presupuestos por estado" options={filterOptions} value={filter} onChange={setFilter} />
-            </div>
-          )}
-
-          <div className="space-y-5">
-            {visible.map((item) => {
-              const style = COLOR_STYLES[item.color] ?? COLOR_STYLES.green
-              return (
-                <article key={item.id} className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${style.icon}`}>
-                        <CategoryIcon name={item.icon} className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="break-words text-xl font-bold text-slate-900">{item.nombre}</h3>
-                          <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${style.badge}`}>• {item.badge}</span>
-                        </div>
-                        <p className="mt-1 text-sm text-slate-500">{item.descripcion}</p>
-                      </div>
-                    </div>
-                    <IconButton
-                      label={`Ajustar presupuesto de ${item.nombre}`}
-                      variant="ghost"
-                      onClick={() => setDialog({ type: 'adjust', budget: item })}
-                    >
-                      <MoreVertical className="h-5 w-5" />
-                    </IconButton>
-                  </div>
-
-                  <dl className="mt-5 grid gap-3 sm:grid-cols-3">
-                    <div className="min-w-0">
-                      <dt className="text-xs uppercase tracking-[0.15em] text-slate-400">Presupuestado</dt>
-                      <dd className="mt-1 break-words text-base font-semibold text-slate-800">{money(item.presupuesto)}</dd>
-                    </div>
-                    <div className="min-w-0">
-                      <dt className="text-xs uppercase tracking-[0.15em] text-slate-400">Gastado</dt>
-                      <dd className="mt-1 break-words text-base font-semibold text-slate-800">{money(item.gastado)}</dd>
-                    </div>
-                    <div className="min-w-0">
-                      <dt className="text-xs uppercase tracking-[0.15em] text-slate-400">Restante</dt>
-                      <dd className="mt-1 break-words text-base font-semibold text-emerald-700">{money(item.restante)}</dd>
-                    </div>
-                  </dl>
-
-                  <div className="mt-5">
-                    <div className="mb-2 flex items-center justify-between text-sm font-semibold text-slate-700">
-                      <span>Consumido</span>
-                      <span className={style.text}>{formatPercent(item.porcentaje)}</span>
-                    </div>
-                    <ProgressBar value={item.porcentaje} label={`Consumo de ${item.nombre}`} className="h-3 bg-slate-100" barClassName={style.bar} />
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-3 text-sm text-slate-600">
-                    <div className="flex min-w-0 items-center gap-2">
-                      {item.color === 'green' ? (
-                        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
-                      ) : item.color === 'red' ? (
-                        <TrendingDown className="h-4 w-4 shrink-0 text-red-600" aria-hidden="true" />
-                      ) : (
-                        <Activity className="h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
-                      )}
-                      <span>{item.detalle}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setDialog({ type: 'adjust', budget: item })}
-                      className="min-h-10 font-semibold text-emerald-700 hover:underline"
-                    >
-                      {item.color === 'green' ? 'Detalles' : 'Ajustar'}
-                    </button>
-                  </div>
-                </article>
-              )
-            })}
           </div>
 
-          {categories.length === 0 && (
-            <EmptyState
-              icon={Target}
-              title="Todavía no tienes presupuestos"
-              description="Crea uno para empezar a planificar tus gastos para este mes."
-              action={
-                <button
-                  type="button"
-                  onClick={() => setDialog({ type: 'budget' })}
-                  className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700"
-                >
-                  Crear presupuesto
-                </button>
-              }
-            />
-          )}
-
-          {categories.length > 0 && (
-            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                  <Sparkles className="h-5 w-5" aria-hidden="true" />
-                </div>
-                <h3 className="text-xl font-bold text-slate-900">Consejos de Optimización Finova</h3>
-              </div>
-              <p className="mt-4 text-sm leading-6 text-slate-700">
-                Podrías transferir S/ 150.00 del presupuesto no utilizado en Salud hacia Alimentación para cerrar el mes sin caer en sobregiro
-                patrimonial.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => setDialog({ type: 'rebalance' })}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Rebalancear Automático
-                </button>
-                <button type="button" onClick={exportCsv} className="rounded-xl px-2 py-2 text-sm font-semibold text-emerald-700 hover:underline">
-                  Ver análisis completo
-                </button>
-              </div>
+          <section aria-labelledby="budgets-list-title" className="space-y-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <h2 id="budgets-list-title" ref={listTitleRef} tabIndex={-1} className="text-xl font-bold text-slate-900 outline-none">
+                Tus presupuestos
+              </h2>
+              <FilterChips
+                label="Filtrar presupuestos por estado"
+                options={filterOptions}
+                value={filter}
+                onChange={setFilter}
+                chipClassName="px-2.5 sm:px-3"
+              />
             </div>
-          )}
+
+            {visible.length === 0 ? (
+              <EmptyState
+                icon={SearchX}
+                title={`Ningún presupuesto en estado ${activeFilterLabel ?? filter}`}
+                description={`En ${periodLabel} no hay presupuestos con ese estado.`}
+                action={
+                  <button type="button" onClick={() => setFilter(FILTER_ALL)} className={SECONDARY_BUTTON}>
+                    Ver todos
+                  </button>
+                }
+              />
+            ) : (
+              <ul className="grid gap-4 xl:grid-cols-2">
+                {visible.map((budget) => (
+                  <li key={budget.id} className="min-w-0">
+                    <BudgetCard
+                      budget={budget}
+                      phase={phase}
+                      movementsTo={{ pathname: '/app/movimientos', search: movementsSearch(search, budget.nombre) }}
+                      highlighted={highlightId === budget.id}
+                      busy={actions.pending?.type === 'delete' && actions.pending.id === budget.id}
+                      canMove={canRebalance}
+                      onEdit={(item) => setDialog({ type: 'form', budget: item })}
+                      onMove={openMoveFor}
+                      onDelete={handleDelete}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </>
       )}
 
-      {dialog?.type === 'budget' && <BudgetDialog onClose={() => setDialog(null)} />}
-      {dialog?.type === 'adjust' && <AdjustBudgetDialog budget={dialog.budget} onClose={() => setDialog(null)} />}
-      {dialog?.type === 'rebalance' && <RebalanceDialog onClose={() => setDialog(null)} />}
+      {dialog?.type === 'form' && (
+        <BudgetFormDialog budget={dialog.budget} period={period} periodLabel={periodLabel} budgets={items} onClose={closeDialog} />
+      )}
+      {dialog?.type === 'rebalance' && (
+        <RebalanceDialog
+          period={period}
+          periodLabel={periodLabel}
+          phase={phase}
+          budgets={items}
+          initial={dialog.initial}
+          onClose={closeDialog}
+        />
+      )}
+    </div>
+  )
+}
+
+function ChipLabel({ text, count, dot }) {
+  return (
+    <>
+      {/* El punto de color se omite en móvil para que los 5 filtros quepan en dos filas. */}
+      {dot && <span aria-hidden="true" className={`hidden h-2 w-2 shrink-0 rounded-full min-[400px]:block ${dot}`} />}
+      <span>{text}</span>
+      <span className="tabular-nums opacity-70">{count}</span>
+    </>
+  )
+}
+
+function BudgetsSkeleton() {
+  return (
+    <div className="space-y-6" role="status" aria-label="Cargando presupuestos">
+      <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-11 w-11 rounded-2xl" />
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-44" />
+            <Skeleton className="h-4 w-28" />
+          </div>
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3">
+          {[0, 1, 2].map((index) => (
+            <div key={index} className={index === 2 ? 'col-span-2 sm:col-span-1' : ''}>
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="mt-2 h-7 w-32 max-w-full" />
+            </div>
+          ))}
+        </div>
+        <Skeleton className="mt-5 h-3 w-full rounded-full" />
+        <Skeleton className="mt-4 h-12 w-full rounded-2xl" />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {[0, 1, 2, 3, 4].map((index) => (
+          <Skeleton key={index} className="h-10 w-24 rounded-full" />
+        ))}
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        {[0, 1, 2, 3].map((index) => (
+          <div key={index} className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+            <div className="flex items-start gap-3">
+              <Skeleton className="h-12 w-12 shrink-0 rounded-2xl" />
+              <div className="flex-1 space-y-2 pt-1">
+                <Skeleton className="h-5 w-40 max-w-full" />
+                <Skeleton className="h-4 w-24" />
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <Skeleton className="h-10" />
+              <Skeleton className="h-10" />
+              <Skeleton className="h-10" />
+            </div>
+            <Skeleton className="mt-4 h-2.5 w-full rounded-full" />
+            <Skeleton className="mt-3 h-10 w-full" />
+          </div>
+        ))}
+      </div>
+      <span className="sr-only">Cargando presupuestos</span>
     </div>
   )
 }
