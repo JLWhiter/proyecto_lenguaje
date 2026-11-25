@@ -1,11 +1,9 @@
 from datetime import timedelta
 
-from django.contrib.auth import login, logout
-from django.contrib.auth.tokens import default_token_generator
-from django.middleware.csrf import get_token
+from django.contrib.auth import login, logout, update_session_auth_hash
+from django.db.models import F
+from django.middleware.csrf import get_token, rotate_token
 from django.utils.decorators import method_decorator
-from django.utils.encoding import force_str
-from django.utils.http import urlsafe_base64_decode
 from django.views.decorators.csrf import csrf_protect
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -15,19 +13,32 @@ from rest_framework.views import APIView
 from .models import User
 from .serializers import (
     LoginSerializer,
+    PasswordChangeSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetSerializer,
+    ProfileUpdateSerializer,
     RegisterSerializer,
     UserSerializer,
     VerifyEmailSerializer,
 )
-from .services import email_delivery_configured, send_password_reset_email, send_verification_email
+from .services import (
+    check_email_token,
+    check_password_reset_token,
+    email_delivery_configured,
+    email_token_already_used,
+    send_password_reset_email,
+    send_verification_email,
+    user_from_uid,
+)
+from .throttling import ScopedThrottleMixin
 
 REMEMBER_ME_AGE = int(timedelta(days=30).total_seconds())
 
 PASSWORD_RESET_MESSAGE = (
     "Si el correo está registrado, recibirás instrucciones para restablecer tu contraseña."
 )
+INVALID_RESET_LINK_MESSAGE = "El enlace no es válido o ya expiró."
+INVALID_VERIFICATION_LINK_MESSAGE = "El enlace de verificación no es válido o ya expiró."
 
 
 def _first_error(errors):
@@ -46,9 +57,10 @@ class CsrfTokenView(APIView):
 
 
 @method_decorator(csrf_protect, name="dispatch")
-class RegisterView(APIView):
+class RegisterView(ScopedThrottleMixin, APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
+    throttle_scope = "register"
 
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
@@ -71,9 +83,10 @@ class RegisterView(APIView):
 
 
 @method_decorator(csrf_protect, name="dispatch")
-class LoginView(APIView):
+class LoginView(ScopedThrottleMixin, APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
+    throttle_scope = "login"
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data, context={"request": request})
@@ -111,11 +124,59 @@ class LogoutView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@method_decorator(csrf_protect, name="dispatch")
+class LogoutAllView(APIView):
+    """Close every session of the user (all devices), including the current one."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        # Bumping the version changes get_session_auth_hash(), so Django rejects
+        # every session that stored the previous hash on its next request.
+        User.objects.filter(pk=request.user.pk).update(session_version=F("session_version") + 1)
+        logout(request)
+        return Response({"detail": "Cerraste sesión en todos tus dispositivos."})
+
+
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         return Response(UserSerializer(request.user).data)
+
+    def patch(self, request):
+        serializer = ProfileUpdateSerializer(request.user, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        user = serializer.save()
+        return Response(UserSerializer(user).data)
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class PasswordChangeView(ScopedThrottleMixin, APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "password_change"
+
+    def post(self, request):
+        serializer = PasswordChangeSerializer(data=request.data, context={"request": request})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        user.set_password(serializer.validated_data["new_password"])
+        user.save(update_fields=["password", "updated_at"])
+        # New password => new session hash: other sessions are logged out, this one
+        # is kept alive with a fresh session key.
+        update_session_auth_hash(request, user)
+        rotate_token(request)
+
+        return Response(
+            {
+                "detail": "Contraseña actualizada correctamente.",
+                "user": UserSerializer(user).data,
+                "csrfToken": get_token(request),
+            }
+        )
 
 
 class SessionStatusView(APIView):
@@ -130,9 +191,10 @@ class SessionStatusView(APIView):
 
 
 @method_decorator(csrf_protect, name="dispatch")
-class PasswordResetView(APIView):
+class PasswordResetView(ScopedThrottleMixin, APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
+    throttle_scope = "password_reset"
 
     def post(self, request):
         serializer = PasswordResetSerializer(data=request.data)
@@ -164,20 +226,9 @@ class PasswordResetConfirmView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            user_id = force_str(urlsafe_base64_decode(serializer.validated_data["uid"]))
-            user = User.objects.get(pk=user_id, is_active=True)
-        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
-            return Response(
-                {"detail": "El enlace no es válido o ya expiró."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if not default_token_generator.check_token(user, serializer.validated_data["token"]):
-            return Response(
-                {"detail": "El enlace no es válido o ya expiró."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        user = user_from_uid(serializer.validated_data["uid"], is_active=True)
+        if user is None or not check_password_reset_token(user, serializer.validated_data["token"]):
+            return Response({"detail": INVALID_RESET_LINK_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
 
         user.set_password(serializer.validated_data["password"])
         user.save(update_fields=["password", "updated_at"])
@@ -194,24 +245,56 @@ class VerifyEmailView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            user_id = force_str(urlsafe_base64_decode(serializer.validated_data["uid"]))
-            user = User.objects.get(pk=user_id)
-        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
-            return Response(
-                {"detail": "El enlace de verificación no es válido o ya expiró."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        invalid = Response({"detail": INVALID_VERIFICATION_LINK_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
+        user = user_from_uid(serializer.validated_data["uid"])
+        if user is None:
+            return invalid
 
+        token = serializer.validated_data["token"]
         if user.email_verified:
-            return Response({"detail": "El correo ya estaba verificado.", "user": UserSerializer(user).data})
+            # Only the link that verified the account may learn that (second click,
+            # mail scanners...). Any other token gets the generic error.
+            if email_token_already_used(user, token):
+                return Response({"detail": "El correo ya estaba verificado.", "user": UserSerializer(user).data})
+            return invalid
 
-        if not default_token_generator.check_token(user, serializer.validated_data["token"]):
-            return Response(
-                {"detail": "El enlace de verificación no es válido o ya expiró."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        if not check_email_token(user, token):
+            return invalid
 
         user.email_verified = True
         user.save(update_fields=["email_verified", "updated_at"])
         return Response({"detail": "Correo verificado correctamente.", "user": UserSerializer(user).data})
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class ResendVerificationEmailView(ScopedThrottleMixin, APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "verify_resend"
+
+    def post(self, request):
+        user = request.user
+        delivery = email_delivery_configured()
+
+        if user.email_verified:
+            return Response(
+                {
+                    "detail": "Tu correo electrónico ya está verificado. No es necesario reenviar el enlace.",
+                    "email_verified": True,
+                    "email_delivery_configured": delivery,
+                }
+            )
+
+        if not send_verification_email(user):
+            # Error bodies carry only `detail`: the SPA treats any other key as a field error.
+            return Response(
+                {"detail": "No pudimos enviar el enlace: el envío de correos aún no está configurado en este entorno."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response(
+            {
+                "detail": "Te enviamos un nuevo enlace de verificación. Revisa tu bandeja de entrada.",
+                "email_verified": False,
+                "email_delivery_configured": True,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
