@@ -2,8 +2,10 @@ import { Link } from 'react-router-dom'
 import Brand from '../components/auth/Brand'
 import AuthCard from '../components/auth/AuthCard'
 import { ArrowRightIcon } from '../components/icons'
+import { useAuth } from '../context/AuthContext'
 
 export default function NotFoundPage() {
+  const { user } = useAuth()
   return (
     <div className="auth-page relative min-h-screen overflow-x-clip">
       <main className="relative mx-auto flex min-h-screen w-full max-w-[470px] flex-col px-4 py-10">
@@ -16,10 +18,10 @@ export default function NotFoundPage() {
             Verifica la dirección o vuelve a una pantalla disponible.
           </p>
           <Link
-            to="/login"
+            to={user ? '/app' : '/login'}
             className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#10B981] to-[#059669] text-[14px] font-bold text-white shadow-[0_14px_28px_-14px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5"
           >
-            Volver al inicio de sesión
+            {user ? 'Volver a Finova' : 'Volver al inicio de sesión'}
             <ArrowRightIcon className="h-4 w-4" />
           </Link>
         </AuthCard>

@@ -7,9 +7,8 @@ import PasswordInput from '../components/auth/PasswordInput'
 import CurrencySelector from '../components/auth/CurrencySelector'
 import PasswordStrength from '../components/auth/PasswordStrength'
 import PrimaryButton from '../components/auth/PrimaryButton'
-import Divider from '../components/auth/SecurityFooter'
-import SocialAuthButtons from '../components/auth/SocialAuthButtons'
 import Alert from '../components/auth/Alert'
+import { allFieldMessages, feedbackFromError } from '../components/auth/feedback'
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -20,8 +19,12 @@ import {
   UserIcon,
 } from '../components/icons'
 import { useAuth } from '../context/AuthContext'
-import { fieldErrorsFromApi, messageFromApi } from '../lib/api'
 import { isStrongPassword, isValidEmail } from '../lib/validation'
+
+// Enlace dentro de la frase de los términos: no se parte en dos líneas y su ::before (absoluto, 13 px arriba
+// y abajo) agranda el área táctil a 40 px sin cambiar el alto de la línea.
+const TERMS_LINK =
+  "relative whitespace-nowrap rounded font-bold text-[#047857] underline decoration-[#A7D9C8] underline-offset-2 before:absolute before:-inset-x-1 before:-inset-y-[13px] before:content-[''] hover:text-[#10B981]"
 
 export default function RegisterPage() {
   const { register } = useAuth()
@@ -43,7 +46,7 @@ export default function RegisterPage() {
     acceptTerms: false,
   })
   const [fieldErrors, setFieldErrors] = useState({})
-  const [serverError, setServerError] = useState('')
+  const [serverError, setServerError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
   const emailValid = isValidEmail(form.email)
@@ -60,7 +63,7 @@ export default function RegisterPage() {
 
   function update(field, value) {
     setForm((current) => ({ ...current, [field]: value }))
-    setServerError('')
+    setServerError(null)
     const serverField = {
       fullName: 'full_name',
       email: 'email',
@@ -135,27 +138,33 @@ export default function RegisterPage() {
     if (!formValid) return
 
     setSubmitting(true)
-    setServerError('')
+    setServerError(null)
     setFieldErrors({})
 
     try {
-      const data = await register({
-        fullName: form.fullName.trim(),
-        email: form.email.trim(),
-        currency: form.currency,
-        password: form.password,
-        passwordConfirm: form.passwordConfirm,
-        acceptTerms: form.acceptTerms,
-      })
-      navigate('/cuenta', {
-        replace: true,
-        state: { justRegistered: true, emailDeliveryConfigured: data.email_delivery_configured },
-      })
+      await register(
+        {
+          fullName: form.fullName.trim(),
+          email: form.email.trim(),
+          currency: form.currency,
+          password: form.password,
+          passwordConfirm: form.passwordConfirm,
+          acceptTerms: form.acceptTerms,
+        },
+        {
+          // En la misma transición que el usuario: así el aviso "cuenta creada" llega al resumen.
+          onSuccess: (data) =>
+            navigate('/app', {
+              replace: true,
+              state: { justRegistered: true, emailDeliveryConfigured: data.email_delivery_configured },
+            }),
+        },
+      )
     } catch (error) {
-      const fields = fieldErrorsFromApi(error)
+      const fields = allFieldMessages(error)
       setFieldErrors(fields)
       if (Object.keys(fields).length === 0) {
-        setServerError(messageFromApi(error, 'No pudimos crear tu cuenta. Inténtalo de nuevo.'))
+        setServerError(feedbackFromError(error, 'No pudimos crear tu cuenta. Inténtalo de nuevo.'))
       }
     } finally {
       setSubmitting(false)
@@ -185,7 +194,7 @@ export default function RegisterPage() {
       <div className="relative flex justify-center px-4">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-[#BFE8D9] bg-white/70 px-3 py-1 text-[10px] font-semibold tracking-wide text-[#047857] shadow-sm backdrop-blur">
           <ShieldCheckIcon className="h-3.5 w-3.5" />
-          Plataforma Segura · Protección en capas
+          Contraseñas con hash · Sesión HttpOnly
         </span>
       </div>
 
@@ -195,14 +204,14 @@ export default function RegisterPage() {
             Crear tu cuenta
           </h1>
           <p className="mt-2 max-w-[500px] text-[13px] leading-relaxed text-[#64748B] sm:text-[13.5px]">
-            Toma el control de tus finanzas personales y presupuestos con analítica inteligente.
+            Registra tus cuentas, ingresos y gastos, define presupuestos por categoría y revisa en qué se va tu dinero cada mes.
           </p>
         </div>
 
         <AuthCard className="mt-6 animate-rise [animation-delay:60ms]">
           {serverError && (
-            <Alert tone="error" className="mb-5">
-              {serverError}
+            <Alert tone={serverError.tone} title={serverError.title} className="mb-5">
+              {serverError.message}
             </Alert>
           )}
 
@@ -266,7 +275,7 @@ export default function RegisterPage() {
                 id="register-password"
                 name="password"
                 label="Contraseña"
-                placeholder="Finova#2025"
+                placeholder="Mínimo 8 caracteres"
                 autoComplete="new-password"
                 value={form.password}
                 disabled={submitting}
@@ -306,38 +315,35 @@ export default function RegisterPage() {
 
             <div>
               <div
-                className={`flex items-start gap-3 rounded-xl border p-3.5 transition ${
+                className={`flex items-start gap-1 rounded-xl border px-1.5 py-1 transition ${
                   termsError ? 'border-red-200 bg-red-50/40' : 'border-[#E5E7EB] bg-[#FBFDFC]'
                 }`}
               >
-                <input
-                  id="accept-terms"
-                  name="acceptTerms"
-                  type="checkbox"
-                  checked={form.acceptTerms}
-                  disabled={submitting}
-                  onChange={(event) => {
-                    update('acceptTerms', event.target.checked)
-                    markTouched('acceptTerms')
-                  }}
-                  onBlur={() => markTouched('acceptTerms')}
-                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[#CBD5E1] accent-[#059669] focus:ring-[#10B981]/30"
-                />
-                <label htmlFor="accept-terms" className="text-[11.5px] leading-relaxed text-[#475569]">
+                {/* Área táctil de 40×40 px para la casilla; el texto es una segunda etiqueta. */}
+                <label htmlFor="accept-terms" className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center">
+                  <input
+                    id="accept-terms"
+                    name="acceptTerms"
+                    type="checkbox"
+                    checked={form.acceptTerms}
+                    disabled={submitting}
+                    onChange={(event) => {
+                      update('acceptTerms', event.target.checked)
+                      markTouched('acceptTerms')
+                    }}
+                    onBlur={() => markTouched('acceptTerms')}
+                    className="h-4 w-4 shrink-0 rounded border-[#CBD5E1] accent-[#059669] focus:ring-[#10B981]/30"
+                  />
+                </label>
+                {/* Líneas de 40 px (alineadas con el área de la casilla): cada enlace amplía su área táctil a 40 px
+                    de alto con ::before sin mover el texto, y dos enlaces en líneas vecinas no se tapan. */}
+                <label htmlFor="accept-terms" className="block cursor-pointer pr-2 text-[12px] leading-10 text-[#475569]">
                   Acepto los{' '}
-                  <Link
-                    to="/terminos"
-                    onClick={(event) => event.stopPropagation()}
-                    className="font-bold text-[#047857] underline decoration-[#A7D9C8] underline-offset-2 hover:text-[#10B981]"
-                  >
+                  <Link to="/terminos" onClick={(event) => event.stopPropagation()} className={TERMS_LINK}>
                     Términos de Servicio
                   </Link>{' '}
                   y la{' '}
-                  <Link
-                    to="/privacidad"
-                    onClick={(event) => event.stopPropagation()}
-                    className="font-bold text-[#047857] underline decoration-[#A7D9C8] underline-offset-2 hover:text-[#10B981]"
-                  >
+                  <Link to="/privacidad" onClick={(event) => event.stopPropagation()} className={TERMS_LINK}>
                     Política de Privacidad
                   </Link>{' '}
                   de Finova.
@@ -361,15 +367,9 @@ export default function RegisterPage() {
             </PrimaryButton>
           </form>
 
-          <div className="my-5">
-            <Divider>o regístrate con</Divider>
-          </div>
-
-          <SocialAuthButtons mode="register" />
-
-          <p className="mt-6 text-center text-[12.5px] text-[#64748B]">
+          <p className="mt-6 border-t border-[#E8EFEB] pt-5 text-center text-[12.5px] text-[#64748B]">
             ¿Ya tienes una cuenta?{' '}
-            <Link to="/login" className="font-bold text-[#047857] transition hover:text-[#10B981] hover:underline">
+            <Link to="/login" className="inline-flex min-h-10 items-center font-bold text-[#047857] transition hover:text-[#10B981] hover:underline">
               Inicia sesión
             </Link>
           </p>
@@ -377,17 +377,17 @@ export default function RegisterPage() {
 
         <footer className="mt-7 animate-rise [animation-delay:120ms]">
           <div className="flex flex-col items-center justify-center gap-2.5 text-[11px] font-medium text-[#64748B] sm:flex-row sm:gap-7">
-            <span className="inline-flex items-center gap-1.5">
-              <CheckCircleIcon className="h-3.5 w-3.5 text-[#10B981]" />
-              Sin comisiones ocultas
+            <span className="inline-flex items-center gap-1.5 text-center">
+              <CheckCircleIcon className="h-3.5 w-3.5 shrink-0 text-[#10B981]" />
+              Alertas al acercarte al límite de un presupuesto o superarlo
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <CheckCircleIcon className="h-3.5 w-3.5 text-[#10B981]" />
-              Alertas inteligentes de presupuesto
+              <CheckCircleIcon className="h-3.5 w-3.5 shrink-0 text-[#10B981]" />
+              Exporta tus movimientos en CSV
             </span>
           </div>
-          <p className="mt-5 text-center text-[10px] leading-relaxed text-[#8A9A94]">
-            © 2026 Finova Technologies S.A.C. Todos los derechos reservados.
+          <p className="mt-5 text-center text-[10px] leading-relaxed text-[#64748B]">
+            Finova es un proyecto académico: no es una entidad financiera ni mueve dinero real.
           </p>
         </footer>
       </main>

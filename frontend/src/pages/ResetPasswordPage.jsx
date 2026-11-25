@@ -6,10 +6,12 @@ import PasswordInput from '../components/auth/PasswordInput'
 import PasswordStrength from '../components/auth/PasswordStrength'
 import PrimaryButton from '../components/auth/PrimaryButton'
 import Alert from '../components/auth/Alert'
+import { allFieldMessages, feedbackFromError } from '../components/auth/feedback'
 import { ArrowRightIcon, CheckCircleIcon } from '../components/icons'
 import { authService } from '../services/authService'
-import { fieldErrorsFromApi, messageFromApi } from '../lib/api'
 import { isStrongPassword } from '../lib/validation'
+
+const FORM_FIELDS = ['password', 'password_confirm']
 
 export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams()
@@ -20,18 +22,26 @@ export default function ResetPasswordPage() {
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [touched, setTouched] = useState({ password: false, confirm: false })
   const [fieldErrors, setFieldErrors] = useState({})
-  const [serverError, setServerError] = useState('')
+  const [serverError, setServerError] = useState(null)
+  // El backend rechazó el enlace (uid/token inválido o vencido): no tiene sentido seguir en el formulario.
+  const [linkRejected, setLinkRejected] = useState('')
   const [done, setDone] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
-  const linkValid = Boolean(uid && token)
+  const linkValid = Boolean(uid && token) && !linkRejected
   const passwordReady = isStrongPassword(password)
   const passwordsMatch = passwordConfirm.length > 0 && passwordConfirm === password
   const formValid = linkValid && passwordReady && passwordsMatch
 
   const passwordError =
     fieldErrors.password ||
-    (touched.password && !passwordReady ? 'Usa al menos 8 caracteres e incluye un número o símbolo.' : '')
+    (touched.password
+      ? password.length === 0
+        ? 'Crea una contraseña.'
+        : !passwordReady
+          ? 'Usa al menos 8 caracteres e incluye un número o símbolo.'
+          : ''
+      : '')
   const confirmError =
     fieldErrors.password_confirm ||
     (touched.confirm
@@ -42,23 +52,40 @@ export default function ResetPasswordPage() {
           : ''
       : '')
 
+  function clearFieldError(field) {
+    setFieldErrors((current) => {
+      if (!current[field]) return current
+      const next = { ...current }
+      delete next[field]
+      return next
+    })
+    setServerError(null)
+  }
+
   async function handleSubmit(event) {
     event.preventDefault()
     setTouched({ password: true, confirm: true })
     if (!formValid) return
 
     setSubmitting(true)
-    setServerError('')
+    setServerError(null)
     setFieldErrors({})
 
     try {
       await authService.resetPassword({ uid, token, password, passwordConfirm })
       setDone(true)
     } catch (error) {
-      const fields = fieldErrorsFromApi(error)
-      setFieldErrors(fields)
-      if (Object.keys(fields).length === 0) {
-        setServerError(messageFromApi(error, 'No pudimos actualizar tu contraseña. Inténtalo de nuevo.'))
+      const fields = allFieldMessages(error)
+      const known = {}
+      for (const field of FORM_FIELDS) if (fields[field]) known[field] = fields[field]
+      setFieldErrors(known)
+
+      if (Object.keys(known).length > 0) return
+      if (error?.status === 400) {
+        // `{"detail": "El enlace no es válido o ya expiró."}` o errores de uid/token.
+        setLinkRejected(error.message || 'El enlace no es válido o ya expiró.')
+      } else {
+        setServerError(feedbackFromError(error, 'No pudimos actualizar tu contraseña. Inténtalo de nuevo.'))
       }
     } finally {
       setSubmitting(false)
@@ -74,16 +101,26 @@ export default function ResetPasswordPage() {
         <AuthCard className="mt-7 animate-rise">
           {!linkValid ? (
             <div className="space-y-5">
-              <h1 className="text-[21px] font-extrabold text-[#111827]">Enlace no válido</h1>
+              <h1 className="text-[21px] font-extrabold text-[#111827]">
+                {linkRejected ? 'Enlace no válido o vencido' : 'Enlace incompleto'}
+              </h1>
               <Alert tone="error">
-                Este enlace no incluye los datos necesarios para restablecer la contraseña. Solicita uno
-                nuevo desde la pantalla de recuperación.
+                {linkRejected
+                  ? `${linkRejected} Los enlaces de recuperación se pueden usar una sola vez y caducan después de un tiempo.`
+                  : 'Este enlace no incluye los datos necesarios para restablecer la contraseña. Copia el enlace completo del correo o solicita uno nuevo.'}
               </Alert>
               <Link
                 to="/recuperar-contrasena"
-                className="inline-flex text-[13px] font-bold text-[#047857] hover:text-[#10B981] hover:underline"
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#10B981] to-[#059669] text-[14px] font-bold text-white shadow-[0_14px_28px_-14px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5"
               >
                 Solicitar un enlace nuevo
+                <ArrowRightIcon className="h-4 w-4" />
+              </Link>
+              <Link
+                to="/login"
+                className="flex min-h-10 items-center justify-center text-[13px] font-bold text-[#047857] hover:text-[#10B981] hover:underline"
+              >
+                Volver al inicio de sesión
               </Link>
             </div>
           ) : done ? (
@@ -118,8 +155,8 @@ export default function ResetPasswordPage() {
               </div>
 
               {serverError && (
-                <Alert tone="error" className="mb-5">
-                  {serverError}
+                <Alert tone={serverError.tone} title={serverError.title} className="mb-5">
+                  {serverError.message}
                 </Alert>
               )}
 
@@ -129,12 +166,15 @@ export default function ResetPasswordPage() {
                     id="reset-password"
                     name="password"
                     label="Nueva contraseña"
-                    placeholder="Finova#2025"
+                    placeholder="Mínimo 8 caracteres"
                     autoComplete="new-password"
                     value={password}
                     disabled={submitting}
                     error={passwordError}
-                    onChange={(event) => setPassword(event.target.value)}
+                    onChange={(event) => {
+                      setPassword(event.target.value)
+                      clearFieldError('password')
+                    }}
                     onBlur={() => setTouched((current) => ({ ...current, password: true }))}
                   />
                   <PasswordStrength password={password} />
@@ -154,7 +194,10 @@ export default function ResetPasswordPage() {
                       <span className="text-[10px] font-bold text-[#047857]">Coinciden</span>
                     ) : null
                   }
-                  onChange={(event) => setPasswordConfirm(event.target.value)}
+                  onChange={(event) => {
+                    setPasswordConfirm(event.target.value)
+                    clearFieldError('password_confirm')
+                  }}
                   onBlur={() => setTouched((current) => ({ ...current, confirm: true }))}
                 />
 

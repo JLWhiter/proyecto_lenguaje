@@ -1,5 +1,11 @@
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
+from django.utils.crypto import salted_hmac
+
+# Same salt Django uses, so session_version == 0 yields Django's exact hash and
+# sessions created before this field existed stay valid.
+SESSION_AUTH_HASH_SALT = "django.contrib.auth.models.AbstractBaseUser.get_session_auth_hash"
 
 
 class UserManager(BaseUserManager):
@@ -50,6 +56,12 @@ class User(AbstractUser):
         default=Currency.PEN,
     )
     email_verified = models.BooleanField("correo verificado", default=False)
+    session_version = models.PositiveIntegerField(
+        "versión de sesión",
+        default=0,
+        editable=False,
+        help_text="Se incrementa para cerrar todas las sesiones activas del usuario.",
+    )
     created_at = models.DateTimeField("fecha de creación", auto_now_add=True)
     updated_at = models.DateTimeField("fecha de actualización", auto_now=True)
 
@@ -71,3 +83,21 @@ class User(AbstractUser):
 
     def get_short_name(self):
         return self.full_name.split(" ")[0] if self.full_name else self.email
+
+    # --- Session invalidation -------------------------------------------------
+    # Django stores this hash in the session at login and logs the session out
+    # when it no longer matches. Including ``session_version`` lets
+    # "logout everywhere" invalidate every session with a single UPDATE.
+
+    def _session_auth_hash(self, secret=None):
+        value = self.password
+        if self.session_version:
+            value = f"{value}:{self.session_version}"
+        return salted_hmac(SESSION_AUTH_HASH_SALT, value, secret=secret, algorithm="sha256").hexdigest()
+
+    def get_session_auth_hash(self):
+        return self._session_auth_hash()
+
+    def get_session_auth_fallback_hash(self):
+        for fallback_secret in settings.SECRET_KEY_FALLBACKS:
+            yield self._session_auth_hash(secret=fallback_secret)

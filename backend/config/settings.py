@@ -1,9 +1,11 @@
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 
 def env_bool(name, default="false"):
-    return os.environ.get(name, default).lower() == "true"
+    return os.environ.get(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def env_list(name, default=""):
@@ -12,8 +14,22 @@ def env_list(name, default=""):
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-local-development-key")
+INSECURE_DEV_SECRET_KEY = "django-insecure-local-development-key"
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", INSECURE_DEV_SECRET_KEY)
+# DEBUG stays on by default so local development works out of the box. Any
+# deployment must set DJANGO_DEBUG=false *and* its own DJANGO_SECRET_KEY.
 DEBUG = env_bool("DJANGO_DEBUG", "true")
+
+if not DEBUG and (
+    not SECRET_KEY.strip()
+    or SECRET_KEY == INSECURE_DEV_SECRET_KEY
+    or SECRET_KEY.startswith("django-insecure-")
+):
+    raise ImproperlyConfigured(
+        "Con DJANGO_DEBUG=false debes definir DJANGO_SECRET_KEY con un valor secreto propio "
+        "(no uses la clave insegura de desarrollo)."
+    )
+
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 
 INSTALLED_APPS = [
@@ -92,6 +108,19 @@ REST_FRAMEWORK = {
         "rest_framework.parsers.FormParser",
         "rest_framework.parsers.MultiPartParser",
     ],
+    # Rates for the scoped throttles used by accounts views ("N/second|minute|hour|day").
+    # Counters live in the default cache (local memory per process unless CACHES is set).
+    "DEFAULT_THROTTLE_RATES": {
+        "login": os.environ.get("FINOVA_THROTTLE_LOGIN_RATE", "10/min"),
+        "register": os.environ.get("FINOVA_THROTTLE_REGISTER_RATE", "10/hour"),
+        "password_reset": os.environ.get("FINOVA_THROTTLE_PASSWORD_RESET_RATE", "5/hour"),
+        "verify_resend": os.environ.get("FINOVA_THROTTLE_VERIFY_RESEND_RATE", "5/hour"),
+        "password_change": os.environ.get("FINOVA_THROTTLE_PASSWORD_CHANGE_RATE", "10/hour"),
+    },
+    # Anonymous throttles are keyed by client IP. 0 = trust only REMOTE_ADDR, so a
+    # forged X-Forwarded-For header cannot bypass the limits. Set it to the number
+    # of reverse proxies in front of Django when deployed behind one.
+    "NUM_PROXIES": int(os.environ.get("DJANGO_NUM_PROXIES", "0")),
 }
 
 # --- Sessions and CSRF (cookie based, no tokens in localStorage) ---

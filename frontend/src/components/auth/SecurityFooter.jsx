@@ -1,15 +1,5 @@
 import { ShieldCheckIcon } from '../icons'
 
-export default function Divider({ children = 'o continúa con' }) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="h-px flex-1 bg-[#E8EFEB]" />
-      <span className="text-[11px] font-semibold text-[#94A3B8]">{children}</span>
-      <span className="h-px flex-1 bg-[#E8EFEB]" />
-    </div>
-  )
-}
-
 export function SecurityFooter() {
   const items = [
     { title: 'Sesión HttpOnly', detail: 'Cookie protegida del navegador' },

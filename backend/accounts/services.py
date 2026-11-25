@@ -1,8 +1,16 @@
+from urllib.parse import urlencode
+
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
-from django.utils.encoding import force_bytes
-from django.utils.http import urlsafe_base64_encode
-from django.contrib.auth.tokens import default_token_generator
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+
+from .tokens import email_verification_token_generator, password_reset_token_generator
+
+# Frontend routes (see frontend/src/App.jsx); both pages read `?uid=...&token=...`.
+VERIFY_EMAIL_PATH = "/verificar-email"
+PASSWORD_RESET_PATH = "/restablecer-contrasena"
 
 
 def email_delivery_configured():
@@ -19,22 +27,27 @@ def _uid(user):
     return urlsafe_base64_encode(force_bytes(user.pk))
 
 
-def _token(user):
-    return default_token_generator.make_token(user)
+def user_from_uid(uidb64, **filters):
+    """Return the user encoded in ``uidb64`` or ``None`` if it is invalid/unknown."""
+    User = get_user_model()
+    try:
+        user_id = force_str(urlsafe_base64_decode(uidb64))
+        return User.objects.get(pk=user_id, **filters)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        return None
+
+
+def _frontend_url(path, user, token):
+    query = urlencode({"uid": _uid(user), "token": token})
+    return f"{settings.FINOVA_FRONTEND_URL.rstrip('/')}{path}?{query}"
 
 
 def build_verification_url(user):
-    return (
-        f"{settings.FINOVA_FRONTEND_URL.rstrip('/')}/verificar-correo"
-        f"?uid={_uid(user)}&token={_token(user)}"
-    )
+    return _frontend_url(VERIFY_EMAIL_PATH, user, email_verification_token_generator.make_token(user))
 
 
 def build_password_reset_url(user):
-    return (
-        f"{settings.FINOVA_FRONTEND_URL.rstrip('/')}/restablecer-contrasena"
-        f"?uid={_uid(user)}&token={_token(user)}"
-    )
+    return _frontend_url(PASSWORD_RESET_PATH, user, password_reset_token_generator.make_token(user))
 
 
 def send_verification_email(user):
@@ -76,11 +89,26 @@ def send_password_reset_email(user):
 
 
 def uid_and_token(user):
-    return _uid(user), _token(user)
+    """uid + password reset token (kept for backwards compatibility)."""
+    return _uid(user), password_reset_token_generator.make_token(user)
+
+
+def verification_uid_and_token(user):
+    """uid + email verification token."""
+    return _uid(user), email_verification_token_generator.make_token(user)
+
+
+def check_password_reset_token(user, token):
+    return password_reset_token_generator.check_token(user, token)
 
 
 def check_email_token(user, token):
-    return default_token_generator.check_token(user, token)
+    """Validate an email verification token (never accepts password reset tokens)."""
+    return email_verification_token_generator.check_token(user, token)
+
+
+def email_token_already_used(user, token):
+    return email_verification_token_generator.check_token_already_used(user, token)
 
 
 __all__ = [
@@ -89,6 +117,10 @@ __all__ = [
     "send_password_reset_email",
     "build_verification_url",
     "build_password_reset_url",
+    "user_from_uid",
     "uid_and_token",
+    "verification_uid_and_token",
+    "check_password_reset_token",
     "check_email_token",
+    "email_token_already_used",
 ]

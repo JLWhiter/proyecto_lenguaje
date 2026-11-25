@@ -31,7 +31,7 @@ export default function AuthInput({
           id={id}
           aria-invalid={error ? 'true' : 'false'}
           aria-describedby={describedBy}
-          className={`h-12 w-full rounded-xl border bg-[#FBFDFC] text-[14px] text-[#1F2937] placeholder:text-[#9AA8A2] transition-all duration-200 focus:bg-white focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60 ${
+          className={`h-12 w-full min-w-0 rounded-xl border bg-[#FBFDFC] text-base text-[#1F2937] sm:text-[14px] placeholder:text-[#9AA8A2] transition-all duration-200 focus:bg-white focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60 ${
             icon ? 'pl-11' : 'pl-4'
           } ${rightElement ? 'pr-12' : 'pr-4'} ${
             error

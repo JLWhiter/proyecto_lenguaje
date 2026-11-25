@@ -3,55 +3,60 @@ import Brand from '../components/auth/Brand'
 import AuthCard from '../components/auth/AuthCard'
 import Alert from '../components/auth/Alert'
 import { ArrowLeftIcon } from '../components/icons'
+import { useAuth } from '../context/AuthContext'
 
 const CONTENT = {
   terminos: {
     title: 'Términos de Servicio',
     intro:
-      'Estos términos describen las condiciones de uso del módulo de autenticación de Finova. El documento es preliminar y se completará antes del lanzamiento público.',
+      'Finova es un proyecto académico: una aplicación web para organizar tus finanzas personales, desarrollada con fines educativos. Estos términos describen cómo puedes usarla.',
     sections: [
       {
+        heading: 'Qué ofrece Finova',
+        text: 'Finova te permite registrar cuentas y billeteras, anotar ingresos, gastos y transferencias, definir presupuestos mensuales por categoría, recibir alertas cuando un presupuesto se acerca a su límite o se detecta un gasto inusual, estimar tu Impuesto a la Renta y ver un resumen de tu situación financiera. También puedes exportar tus movimientos en formato CSV desde Configuración.',
+      },
+      {
         heading: 'Uso de la cuenta',
-        text: 'Debes proporcionar información veraz y mantener la confidencialidad de tus credenciales. La cuenta es personal y no debe compartirse.',
+        text: 'Debes proporcionar información veraz y mantener la confidencialidad de tus credenciales. La cuenta es personal y no debe compartirse. Desde Configuración puedes cambiar tu contraseña y cerrar la sesión en todos tus dispositivos.',
+      },
+      {
+        heading: 'Información que registras',
+        text: 'Los saldos, movimientos y presupuestos los ingresas tú: Finova no se conecta con bancos ni mueve dinero real. Las cifras, alertas y resúmenes son referenciales y no constituyen asesoría financiera, tributaria ni legal.',
       },
       {
         heading: 'Seguridad',
-        text: 'Finova aplica hash de contraseñas, cookies de sesión HttpOnly, protección CSRF y validaciones en el servidor. Ningún sistema puede garantizar seguridad absoluta, por lo que debes usar una contraseña única y mantener tus dispositivos protegidos.',
-      },
-      {
-        heading: 'Alcance actual del servicio',
-        text: 'En esta etapa solo está disponible el módulo de registro e inicio de sesión. Las funciones de dashboard financiero, transacciones, presupuestos y reportes aún no forman parte de la aplicación.',
+        text: 'Finova aplica hash de contraseñas, cookies de sesión HttpOnly, protección CSRF, límites de intentos y validaciones en el servidor. Ningún sistema puede garantizar seguridad absoluta, por lo que debes usar una contraseña única y mantener tus dispositivos protegidos.',
       },
       {
         heading: 'Contacto',
-        text: 'Para consultas sobre estos términos, utiliza los canales oficiales de soporte de Finova cuando estén publicados.',
+        text: 'Finova es un proyecto académico y no ofrece soporte comercial. Para consultas sobre estos términos, comunícate con el equipo del proyecto.',
       },
     ],
   },
   privacidad: {
     title: 'Política de Privacidad',
     intro:
-      'Esta política describe cómo el módulo de autenticación de Finova trata los datos necesarios para crear y proteger tu cuenta. Es un documento preliminar sujeto a revisión legal.',
+      'Finova es un proyecto académico. Esta política describe qué datos trata la aplicación para crear y proteger tu cuenta y para mostrarte tu información financiera.',
     sections: [
       {
         heading: 'Datos que recopilamos',
-        text: 'Nombre completo, correo electrónico, moneda principal, estado de verificación del correo y fechas de creación y actualización de la cuenta.',
+        text: 'De tu cuenta: nombre completo, correo electrónico, moneda principal, estado de verificación del correo y fechas de creación y actualización. De tu uso: las cuentas, movimientos y presupuestos que registras en la aplicación y las alertas que se generan a partir de ellos.',
       },
       {
         heading: 'Finalidad',
-        text: 'Autenticar tu identidad, mantener tu sesión, aplicar medidas de seguridad y permitir la recuperación de acceso. No utilizamos estos datos para publicidad.',
+        text: 'Autenticar tu identidad, mantener tu sesión, aplicar medidas de seguridad, permitir la recuperación de acceso y calcular los resúmenes, presupuestos y alertas que ves en Finova. No utilizamos estos datos para publicidad ni los vendemos a terceros.',
       },
       {
         heading: 'Contraseñas',
         text: 'Las contraseñas se almacenan únicamente como hash PBKDF2 mediante el sistema de Django. Finova no guarda ni muestra contraseñas en texto plano.',
       },
       {
-        heading: 'Cookies',
-        text: 'Usamos una cookie de sesión HttpOnly para identificar la sesión autenticada y una cookie CSRF legible por la aplicación para proteger las peticiones. No almacenamos tokens de sesión en localStorage.',
+        heading: 'Cookies y almacenamiento local',
+        text: 'Usamos una cookie de sesión HttpOnly para identificar la sesión autenticada y una cookie CSRF legible por la aplicación para proteger las peticiones. No almacenamos tokens de sesión en localStorage; allí solo guardamos preferencias de visualización de este dispositivo, como "Mostrar saldos".',
       },
       {
-        heading: 'Derechos del usuario',
-        text: 'Puedes solicitar información, corrección o eliminación de tus datos a través de los canales oficiales de Finova. El procedimiento formal se habilitará antes del lanzamiento público.',
+        heading: 'Tus derechos',
+        text: 'Puedes corregir tu nombre y tu moneda principal desde Configuración y descargar tus movimientos en CSV cuando quieras. Para solicitar la eliminación de tu cuenta o de tus datos, comunícate con el equipo del proyecto.',
       },
     ],
   },
@@ -59,18 +64,20 @@ const CONTENT = {
 
 export default function LegalPage({ kind = 'terminos' }) {
   const content = CONTENT[kind] ?? CONTENT.terminos
+  const { user } = useAuth()
+  const back = user ? { to: '/app/configuracion', label: 'Volver a Finova' } : { to: '/registro', label: 'Volver al registro' }
 
   return (
     <div className="auth-page relative min-h-screen overflow-x-clip">
       <main className="relative mx-auto w-full max-w-[700px] px-4 py-8 sm:py-10">
         <Link
-          to="/registro"
-          className="mb-6 inline-flex items-center gap-2 text-[12px] font-semibold text-[#64748B] transition hover:text-[#047857]"
+          to={back.to}
+          className="mb-6 inline-flex min-h-10 items-center gap-2 text-[12px] font-semibold text-[#64748B] transition hover:text-[#047857]"
         >
           <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/80 bg-white/70 shadow-sm">
             <ArrowLeftIcon className="h-4 w-4" />
           </span>
-          Volver al registro
+          {back.label}
         </Link>
 
         <Brand badge={false} className="items-start text-left" />
@@ -80,7 +87,7 @@ export default function LegalPage({ kind = 'terminos' }) {
           <p className="mt-2 text-[12.5px] leading-relaxed text-[#64748B]">{content.intro}</p>
 
           <Alert tone="info" className="mt-5">
-            Versión preliminar. Este texto no constituye todavía un documento legal definitivo.
+            Proyecto académico. Este texto explica cómo funciona Finova; no es un documento legal vinculante.
           </Alert>
 
           <div className="mt-6 space-y-5">
@@ -92,8 +99,8 @@ export default function LegalPage({ kind = 'terminos' }) {
             ))}
           </div>
 
-          <p className="mt-7 border-t border-[#E8EFEB] pt-4 text-[10.5px] text-[#8A9A94]">
-            © 2026 Finova Technologies S.A.C. Todos los derechos reservados.
+          <p className="mt-7 border-t border-[#E8EFEB] pt-4 text-[10.5px] text-[#64748B]">
+            Finova es un proyecto académico desarrollado con fines educativos: no es una empresa ni una entidad financiera.
           </p>
         </AuthCard>
       </main>
