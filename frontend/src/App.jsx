@@ -16,6 +16,7 @@ const TransactionsPage = lazy(() => import('./features/transactions/Transactions
 const BudgetsPage = lazy(() => import('./features/budgets/BudgetsPage'))
 const AccountsPage = lazy(() => import('./features/accounts/AccountsPage'))
 const AlertsPage = lazy(() => import('./features/alerts/AlertsPage'))
+const TaxesPage = lazy(() => import('./features/taxes/TaxesPage'))
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage'))
 
 export default function App() {
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="presupuestos" element={<BudgetsPage />} />
           <Route path="cuentas" element={<AccountsPage />} />
           <Route path="alertas" element={<AlertsPage />} />
+          <Route path="impuestos" element={<TaxesPage />} />
           <Route path="configuracion" element={<SettingsPage />} />
         </Route>
       </Route>
