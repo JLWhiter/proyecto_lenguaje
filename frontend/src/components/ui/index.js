@@ -1,0 +1,11 @@
+// Kit de UI compartido. Importa desde aquí: `import { Modal, useToast } from '../../components/ui'`.
+export { default as Modal } from './Modal'
+export { default as FormDialog, FormField } from './FormDialog'
+export { default as ConfirmDialog, ConfirmProvider, useConfirm } from './ConfirmDialog'
+export { ToastProvider, useToast } from './Toast'
+export { default as EmptyState } from './EmptyState'
+export { default as ErrorState } from './ErrorState'
+export { Skeleton, SkeletonCard, PageSkeleton } from './Skeleton'
+export { default as IconButton } from './IconButton'
+export { default as FilterChips, parseCountLabel } from './FilterChips'
+export { default as ProgressBar } from './ProgressBar'

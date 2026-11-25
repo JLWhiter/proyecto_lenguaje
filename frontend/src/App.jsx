@@ -1,80 +1,61 @@
-import { useEffect, useState } from 'react'
+import { lazy } from 'react'
+import { Navigate, Route, Routes } from 'react-router-dom'
+import { GuestRoute, ProtectedRoute, PublicRoute } from './components/RouteGuards'
+import FinanceLayout from './layouts/FinanceLayout'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import LegalPage from './pages/LegalPage'
+import LoginPage from './pages/LoginPage'
+import NotFoundPage from './pages/NotFoundPage'
+import RegisterPage from './pages/RegisterPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
+import VerifyEmailPage from './pages/VerifyEmailPage'
 
-async function fetchHealth() {
-  const response = await fetch('/api/health/')
-  if (!response.ok) throw new Error('La API no respondió correctamente')
-  return response.json()
-}
+// Una pantalla por ruta, cargada bajo demanda (recharts solo se descarga en el resumen).
+const DashboardPage = lazy(() => import('./features/dashboard/DashboardPage'))
+const TransactionsPage = lazy(() => import('./features/transactions/TransactionsPage'))
+const BudgetsPage = lazy(() => import('./features/budgets/BudgetsPage'))
+const AccountsPage = lazy(() => import('./features/accounts/AccountsPage'))
+const AlertsPage = lazy(() => import('./features/alerts/AlertsPage'))
+const TaxesPage = lazy(() => import('./features/taxes/TaxesPage'))
+const SettingsPage = lazy(() => import('./features/settings/SettingsPage'))
 
 export default function App() {
-  const [health, setHealth] = useState({ state: 'loading', service: '' })
-
-  async function checkApi() {
-    setHealth({ state: 'loading', service: '' })
-    try {
-      const result = await fetchHealth()
-      setHealth({ state: 'online', service: result.service })
-    } catch {
-      setHealth({ state: 'offline', service: '' })
-    }
-  }
-
-  useEffect(() => {
-    checkApi()
-  }, [])
-
-  const statusText = {
-    loading: 'Comprobando conexión',
-    online: 'API conectada',
-    offline: 'API no disponible',
-  }[health.state]
-
   return (
-    <main className="shell">
-      <header className="topbar">
-        <a className="wordmark" href="/" aria-label="proyecto-lenguaje, inicio">
-          <span className="wordmark-mark">pl</span>
-          <span>proyecto-lenguaje</span>
-        </a>
-        <span className="topbar-label">ENTORNO DE DESARROLLO</span>
-      </header>
+    <Routes>
+      {/* Solo sin sesión: con sesión redirigen a /app */}
+      <Route element={<GuestRoute />}>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/registro" element={<RegisterPage />} />
+        <Route path="/recuperar-contrasena" element={<ForgotPasswordPage />} />
+        <Route path="/restablecer-contrasena" element={<ResetPasswordPage />} />
+      </Route>
 
-      <section className="content" aria-labelledby="page-title">
-        <p className="eyebrow"><span /> ESPACIO DE TRABAJO</p>
-        <h1 id="page-title">Todo listo para<br />empezar.</h1>
-        <p className="intro">
-          Tu espacio de proyecto ya está en marcha. Revisa la conexión entre la
-          interfaz y el servidor para continuar.
-        </p>
+      {/* Con o sin sesión */}
+      <Route element={<PublicRoute />}>
+        <Route path="/verificar-email" element={<VerifyEmailPage />} />
+        <Route path="/terminos" element={<LegalPage kind="terminos" />} />
+        <Route path="/privacidad" element={<LegalPage kind="privacidad" />} />
+      </Route>
 
-        <section className={`status-panel status-${health.state}`} aria-live="polite">
-          <div className="status-icon" aria-hidden="true">
-            {health.state === 'loading' ? '…' : health.state === 'online' ? '✓' : '!' }
-          </div>
-          <div className="status-copy">
-            <p className="status-title">{statusText}</p>
-            <p className="status-detail">
-              {health.state === 'online'
-                ? health.service
-                : health.state === 'offline'
-                  ? 'Inicia Django en el puerto 8000 y vuelve a comprobar.'
-                  : 'Conectando con el backend Django…'}
-            </p>
-          </div>
-          <button className="refresh-button" onClick={checkApi} disabled={health.state === 'loading'}>
-            Comprobar
-          </button>
-        </section>
+      {/* Área privada */}
+      <Route element={<ProtectedRoute />}>
+        <Route path="/app" element={<FinanceLayout />}>
+          <Route index element={<DashboardPage />} />
+          <Route path="movimientos" element={<TransactionsPage />} />
+          <Route path="presupuestos" element={<BudgetsPage />} />
+          <Route path="cuentas" element={<AccountsPage />} />
+          <Route path="alertas" element={<AlertsPage />} />
+          <Route path="impuestos" element={<TaxesPage />} />
+          <Route path="configuracion" element={<SettingsPage />} />
+        </Route>
+      </Route>
 
-        <div className="stack-line" aria-label="Tecnologías">
-          <span>Django</span><i /> <span>React</span><i /> <span>Vite</span>
-        </div>
-      </section>
+      {/* Rutas antiguas */}
+      <Route path="/" element={<Navigate to="/app" replace />} />
+      <Route path="/dashboard" element={<Navigate to="/app" replace />} />
+      <Route path="/cuenta" element={<Navigate to="/app/configuracion" replace />} />
 
-      <footer className="footer">
-        <span>proyecto-lenguaje</span>
-        <span>BACKEND + FRONTEND</span>
-      </footer>
-    </main>
+      <Route path="*" element={<NotFoundPage />} />
+    </Routes>
   )
 }
