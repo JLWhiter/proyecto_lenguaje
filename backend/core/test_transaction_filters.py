@@ -1,9 +1,21 @@
 """Pruebas unitarias (unittest) de los filtros funcionales de transacciones."""
 
 import unittest
+from datetime import date
 from decimal import Decimal
 
-from core.transaction_filters import all_of, filter_transactions, in_category, of_type, total_amount
+from core.transaction_filters import (
+    all_of,
+    category_label,
+    daily_totals,
+    filter_transactions,
+    group_by_day,
+    in_category,
+    of_kind,
+    of_type,
+    page_of,
+    total_amount,
+)
 
 ITEMS = [
     {"nombre": "Supermercado", "categoria": "Alimentación", "tipo": "GASTO", "monto": Decimal("-120.50")},
@@ -62,6 +74,59 @@ class TransactionFilterTests(unittest.TestCase):
     def test_total_amount(self):
         self.assertEqual(total_amount(ITEMS), Decimal("2842.10"))
         self.assertEqual(total_amount([]), Decimal("0.00"))
+
+
+def movement(name, kind, amount, when):
+    value = Decimal(amount)
+    return {"nombre": name, "categoria": "X", "tipo": "GASTO" if value < 0 else "INGRESO", "kind": kind, "monto": value, "occurred_at": when}
+
+
+# Ordenados del más reciente al más antiguo, como los devuelve la API.
+MOVEMENTS = [
+    movement("Taxi", "REGULAR", "-20.00", "2026-11-25T08:00:00-05:00"),
+    movement("Sueldo", "REGULAR", "3000.00", "2026-11-24T23:30:00-05:00"),
+    movement("Recarga Yape", "TRANSFER", "-100.00", "2026-11-24T10:00:00-05:00"),
+    movement("Mercado", "REGULAR", "-80.00", "2026-11-02T09:00:00-05:00"),
+]
+
+
+class GroupingTests(unittest.TestCase):
+    def test_of_kind(self):
+        regular = list(filter(of_kind("REGULAR", "DEPOSIT"), MOVEMENTS))
+
+        self.assertEqual([item["nombre"] for item in regular], ["Taxi", "Sueldo", "Mercado"])
+
+    def test_daily_totals_use_local_day(self):
+        self.assertEqual(
+            daily_totals(MOVEMENTS),
+            {date(2026, 11, 25): Decimal("-20.00"), date(2026, 11, 24): Decimal("2900.00"), date(2026, 11, 2): Decimal("-80.00")},
+        )
+
+    def test_group_by_day_titles_and_totals(self):
+        groups = group_by_day(MOVEMENTS, date(2026, 11, 25), daily_totals(MOVEMENTS))
+
+        self.assertEqual([group["titulo"] for group in groups], ["HOY", "AYER", "2 NOV 2026"])
+        self.assertEqual([len(group["items"]) for group in groups], [1, 2, 1])
+        self.assertEqual(groups[1]["total"], Decimal("2900.00"))
+        self.assertEqual(groups[1]["fecha"], "2026-11-24")
+
+    def test_day_total_covers_items_outside_the_page(self):
+        page, pages = page_of(MOVEMENTS, 1, 2)
+
+        groups = group_by_day(page, date(2026, 11, 25), daily_totals(MOVEMENTS))
+
+        self.assertEqual(pages, 2)
+        self.assertEqual(groups[-1]["total"], Decimal("2900.00"))
+        self.assertEqual(len(groups[-1]["items"]), 1)
+
+    def test_page_of(self):
+        self.assertEqual(page_of(MOVEMENTS, 2, 3), (MOVEMENTS[3:], 2))
+        self.assertEqual(page_of(MOVEMENTS, 5, 3), ([], 2))
+        self.assertEqual(page_of([], 1, 50), ([], 1))
+
+    def test_category_label(self):
+        self.assertEqual(category_label("  comida   rápida "), "Comida rápida")
+        self.assertEqual(category_label("ATM"), "ATM")
 
 
 if __name__ == "__main__":

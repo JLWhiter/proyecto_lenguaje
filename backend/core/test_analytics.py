@@ -12,6 +12,8 @@ from core.analytics import (
     dashboard_charts,
     expense_distribution,
     month_window,
+    monthly_summary,
+    percent_change,
     percentages_summing_100,
     trend_percentage,
 )
@@ -35,9 +37,11 @@ def utc(year, month, day, hour=12):
     return datetime(year, month, day, hour, tzinfo=timezone.utc)
 
 
-# Saldo inicial 500. Movimientos: +3000 (mar), -200 (abr), -300 -100 +1000 (may)
-# y una transferencia interna en mayo que no cuenta en el resumen.
+# Saldo inicial 500 (feb). Movimientos: +3000 (mar), -200 (abr), -300 -100 +1000 (may)
+# y una transferencia interna en mayo. Ni el saldo inicial ni la transferencia
+# cuentan en el resumen de ingresos y gastos.
 RECORDS = [
+    record(0, utc(2024, 2, 1), "Saldo inicial", "INGRESO", Decimal("500.00"), status="Acreditado", in_summary=False),
     record(1, utc(2024, 3, 10), "Salario", "INGRESO", Decimal("3000.00"), status="Acreditado"),
     record(2, utc(2024, 4, 5), "Alimentación", "GASTO", Decimal("200.00")),
     record(3, utc(2024, 5, 2), " alimentación ", "GASTO", Decimal("300.00")),
@@ -105,6 +109,12 @@ class NumpyHelpersTests(unittest.TestCase):
         self.assertEqual(trend_percentage([0, 100]), 0.0)
         self.assertEqual(trend_percentage([100]), 0.0)
 
+    def test_percent_change(self):
+        self.assertAlmostEqual(percent_change(200, 250), 25.0)
+        self.assertAlmostEqual(percent_change(-100, 50), 150.0)
+        self.assertIsNone(percent_change(0, 80))
+        self.assertEqual(percent_change(0, 0), 0.0)
+
     def test_percentages_always_sum_100(self):
         result = percentages_summing_100([1, 1, 1])
 
@@ -156,12 +166,31 @@ class DashboardChartsTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in result], ["Cat 0", "Cat 1", "Cat 2", "Cat 3", "Otras categorías"])
         self.assertEqual(result[-1]["monto"], 96.0 + 95.0)
 
+    def test_monthly_summary_compares_with_previous_month(self):
+        summary = monthly_summary(clean_transactions(RECORDS, TZ), "2024-05", 390000)
+
+        self.assertEqual(summary["ingresos_mensuales"], Decimal("1000.00"))
+        self.assertEqual(summary["gastos_mensuales"], Decimal("400.00"))
+        self.assertEqual(summary["balance_cierre"], Decimal("3900.00"))
+        self.assertEqual((summary["ingresos_variacion"], summary["ingresos_variacion_pct"]), ("—", None))
+        self.assertEqual((summary["gastos_variacion"], summary["gastos_variacion_pct"]), ("+100.0%", 100.0))
+        self.assertEqual((summary["balance_variacion"], summary["balance_variacion_pct"]), ("+18.2% vs mes anterior", 18.2))
+
+    def test_monthly_summary_of_a_past_month(self):
+        summary = monthly_summary(clean_transactions(RECORDS, TZ), "2024-03", 390000)
+
+        self.assertEqual(summary["ingresos_mensuales"], Decimal("3000.00"))
+        self.assertEqual(summary["balance_cierre"], Decimal("3500.00"))
+        self.assertEqual(summary["balance_variacion_pct"], 600.0)
+
     def test_no_movements_gives_empty_charts(self):
         charts = dashboard_charts([], "2024-05", Decimal("1000"), TZ)
 
         self.assertEqual(charts["evolucion_saldo"], [])
         self.assertEqual(charts["distribucion_gastos"], [])
         self.assertEqual(charts["evolucion_tendencia"], "0.0%")
+        self.assertEqual(charts["ingresos_mensuales"], Decimal("0.00"))
+        self.assertEqual(charts["balance_variacion"], "0.0% vs mes anterior")
 
     def test_month_before_any_movement_gives_empty_evolution(self):
         charts = dashboard_charts(RECORDS, "2023-06", CURRENT_BALANCE, TZ)

@@ -9,10 +9,20 @@ resultado de ``QuerySet.values(*FIELDS)``), así que se puede probar con
 
 Los montos se manejan en céntimos (enteros ``int64``) para que las sumas
 sean exactas y no arrastren errores de punto flotante.
+
+``count_in_summary`` indica si el movimiento cuenta como ingreso o gasto del
+mes (en la app: clases REGULAR y DEPOSIT). Las transferencias, ajustes y saldos
+iniciales no cuentan en el resumen, pero sí en la evolución del saldo, que
+usa todos los movimientos.
 """
+
+from decimal import Decimal
 
 import numpy as np
 import pandas as pd
+
+from .periods import MONTH_NAMES, shift_month
+from .transaction_filters import category_label
 
 INCOME = "INGRESO"
 EXPENSE = "GASTO"
@@ -20,9 +30,9 @@ SUMMARY_STATUSES = ("Completado", "Acreditado")
 UNCATEGORIZED = "Sin categoría"
 OTHERS = "Otras categorías"
 FIELDS = ("id", "occurred_at", "category", "transaction_type", "amount", "status", "count_in_summary")
-MONTH_NAMES = ("Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Set", "Oct", "Nov", "Dic")
 PALETTE = ("#ef4444", "#10b981", "#f59e0b", "#60a5fa", "#4f46e5")
 OTHERS_COLOR = "#94a3b8"
+NO_VARIATION = "—"
 CLEAN_COLUMNS = ["id", "occurred_at", "month", "category", "type", "amount_cents", "signed_cents", "in_summary"]
 
 
@@ -30,8 +40,7 @@ def normalize_category(value):
     """'  comida   rápida ' -> 'Comida rápida'; vacía o nula -> 'Sin categoría'."""
     if value is None or pd.isna(value):
         return UNCATEGORIZED
-    text = " ".join(str(value).split())
-    return text[:1].upper() + text[1:] if text else UNCATEGORIZED
+    return category_label(value) or UNCATEGORIZED
 
 
 def clean_transactions(records, tz):
@@ -75,13 +84,6 @@ def clean_transactions(records, tz):
     return frame.reset_index(drop=True)
 
 
-def shift_month(month, offset):
-    """Suma ``offset`` meses a un período 'AAAA-MM'."""
-    year, number = map(int, month.split("-"))
-    index = year * 12 + (number - 1) + offset
-    return f"{index // 12:04d}-{index % 12 + 1:02d}"
-
-
 def month_window(end_month, size=6):
     """Los ``size`` períodos consecutivos que terminan en ``end_month`` (incluido)."""
     return [shift_month(end_month, offset) for offset in range(-size + 1, 1)]
@@ -94,13 +96,26 @@ def month_label(month, with_year=False):
     return f"{name} {year[2:]}" if with_year else name
 
 
-def monthly_net(frame, months):
-    """Neto (ingresos menos gastos) en céntimos de cada período de ``months``."""
+def sum_by_month(frame, months, column):
+    """Suma de ``column`` (en céntimos) para cada período de ``months``."""
     totals = np.zeros(len(months), dtype=np.int64)
     position = frame["month"].map({month: index for index, month in enumerate(months)})
     inside = position.notna().to_numpy()
-    np.add.at(totals, position.to_numpy()[inside].astype(np.int64), frame["signed_cents"].to_numpy()[inside])
+    np.add.at(totals, position.to_numpy()[inside].astype(np.int64), frame[column].to_numpy()[inside])
     return totals
+
+
+def monthly_net(frame, months):
+    """Neto (ingresos menos gastos) en céntimos de cada período de ``months``."""
+    return sum_by_month(frame, months, "signed_cents")
+
+
+def monthly_flows(frame, months):
+    """Ingresos y gastos que cuentan en el resumen, en céntimos, de cada período."""
+    summary = frame.loc[frame["in_summary"]]
+    income = sum_by_month(summary.loc[summary["type"] == INCOME], months, "amount_cents")
+    expense = sum_by_month(summary.loc[summary["type"] == EXPENSE], months, "amount_cents")
+    return income, expense
 
 
 def balance_evolution(frame, months, current_balance_cents):
@@ -125,6 +140,47 @@ def trend_percentage(values):
 def format_trend(percentage):
     """12.345 -> '+12.3%'; valores casi nulos -> '0.0%'."""
     return "0.0%" if round(percentage, 1) == 0 else f"{percentage:+.1f}%"
+
+
+def percent_change(previous, current):
+    """Variación porcentual de ``previous`` a ``current``.
+
+    Si el valor anterior es 0 no hay base de comparación: devuelve ``None``
+    (o 0.0 si ambos son 0, porque no hubo cambio).
+    """
+    if previous == 0:
+        return 0.0 if current == 0 else None
+    return float((current - previous) / abs(previous) * 100)
+
+
+def cents_to_amount(cents):
+    """Céntimos enteros -> ``Decimal`` con dos decimales (4550 -> Decimal('45.50'))."""
+    return (Decimal(int(cents)) / 100).quantize(Decimal("0.01"))
+
+
+def variation_fields(name, previous, current, suffix=""):
+    """Campos '<name>_variacion' ('+8.2%') y '<name>_variacion_pct' (8.2 o None)."""
+    percentage = percent_change(previous, current)
+    text = NO_VARIATION if percentage is None else format_trend(percentage)
+    return {
+        f"{name}_variacion": f"{text}{suffix}",
+        f"{name}_variacion_pct": None if percentage is None else round(percentage, 1),
+    }
+
+
+def monthly_summary(frame, month, current_balance_cents):
+    """Ingresos, gastos y saldo de cierre de ``month`` comparados con el mes anterior."""
+    months = [shift_month(month, -1), month]
+    income, expense = monthly_flows(frame, months)
+    balances = balance_evolution(frame, months, current_balance_cents)
+    return {
+        "ingresos_mensuales": cents_to_amount(income[1]),
+        "gastos_mensuales": cents_to_amount(expense[1]),
+        "balance_cierre": cents_to_amount(balances[1]),
+        **variation_fields("ingresos", *income),
+        **variation_fields("gastos", *expense),
+        **variation_fields("balance", *balances, suffix=" vs mes anterior"),
+    }
 
 
 def percentages_summing_100(amounts):
@@ -164,32 +220,37 @@ def expense_distribution(frame, month, top=5):
     ]
 
 
-def dashboard_charts(records, month, current_balance, tz, window=6):
-    """Datos de los gráficos del dashboard para el período ``month`` ('AAAA-MM').
+def balance_chart(frame, month, current_balance_cents, window):
+    """Serie del saldo total al cierre de cada mes (hasta ``window`` meses).
 
-    La evolución del saldo cubre hasta ``window`` meses y empieza un mes antes
-    del primer movimiento registrado, para mostrar el saldo inicial.
+    Empieza en el mes del primer movimiento: el saldo inicial de cada cuenta
+    es un movimiento más (OPENING), así que antes de él el saldo era 0.
     """
-    frame = clean_transactions(records, tz)
-    charts = {
-        "evolucion_saldo": [],
-        "evolucion_periodo": "",
-        "evolucion_tendencia": "0.0%",
-        "distribucion_gastos": expense_distribution(frame, month),
-    }
+    empty = {"evolucion_saldo": [], "evolucion_periodo": "", "evolucion_tendencia": "0.0%"}
     if frame.empty:
-        return charts
-
-    start = shift_month(frame["month"].min(), -1)
+        return empty
+    start = frame["month"].min()
     months = [period for period in month_window(month, window) if period >= start]
     if not months:
-        return charts
+        return empty
 
-    balances = balance_evolution(frame, months, round(current_balance * 100))
-    charts["evolucion_saldo"] = [
-        {"name": month_label(period), "periodo": period, "value": int(cents) / 100}
-        for period, cents in zip(months, balances)
-    ]
-    charts["evolucion_periodo"] = f"{month_label(months[0], with_year=True)} - {month_label(months[-1], with_year=True)}"
-    charts["evolucion_tendencia"] = format_trend(trend_percentage(balances))
-    return charts
+    balances = balance_evolution(frame, months, current_balance_cents)
+    return {
+        "evolucion_saldo": [
+            {"name": month_label(period), "periodo": period, "value": int(cents) / 100}
+            for period, cents in zip(months, balances)
+        ],
+        "evolucion_periodo": f"{month_label(months[0], with_year=True)} - {month_label(months[-1], with_year=True)}",
+        "evolucion_tendencia": format_trend(trend_percentage(balances)),
+    }
+
+
+def dashboard_charts(records, month, current_balance, tz, window=6):
+    """Gráficos y totales del dashboard para el período ``month`` ('AAAA-MM')."""
+    frame = clean_transactions(records, tz)
+    balance_cents = round(current_balance * 100)
+    return {
+        **balance_chart(frame, month, balance_cents, window),
+        "distribucion_gastos": expense_distribution(frame, month),
+        **monthly_summary(frame, month, balance_cents),
+    }
