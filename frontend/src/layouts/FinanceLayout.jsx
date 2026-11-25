@@ -26,8 +26,10 @@ function FinanceShell() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const menuButtonRef = useRef(null)
   const { pathname } = useLocation()
+  // Se recarga con invalidate('alerts'): campana (sin leer), drawer y barra inferior (activas).
   const alerts = useAlerts()
-  const activeAlertCount = alerts.data?.items?.length ?? 0
+  const activeAlertCount = alerts.data?.counts?.activas ?? alerts.data?.items?.length ?? 0
+  const unreadAlertCount = alerts.data?.counts?.no_leidas ?? 0
 
   // Al cambiar de pantalla: cerrar el drawer y volver arriba.
   useEffect(() => {
@@ -48,7 +50,7 @@ function FinanceShell() {
         ref={menuButtonRef}
         drawerOpen={drawerOpen}
         onOpenMenu={() => setDrawerOpen(true)}
-        alertCount={activeAlertCount}
+        unreadAlertCount={unreadAlertCount}
       />
 
       <SideDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} alertCount={activeAlertCount} />

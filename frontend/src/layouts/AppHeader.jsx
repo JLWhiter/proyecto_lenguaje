@@ -8,13 +8,12 @@ import { initialsOf } from '../lib/format'
 import PeriodPicker from './PeriodPicker'
 
 /** Header fijo: menú (solo < lg), marca, selector de período, campana de alertas y avatar. */
-const AppHeader = forwardRef(function AppHeader({ drawerOpen, onOpenMenu, alertCount }, menuButtonRef) {
+const AppHeader = forwardRef(function AppHeader({ drawerOpen, onOpenMenu, unreadAlertCount = 0 }, menuButtonRef) {
   const { user } = useAuth()
   const { search } = usePeriod()
   const name = user?.full_name || user?.email || 'Mi cuenta'
   const initials = initialsOf(user?.full_name, user?.email)
-  const alertsLabel =
-    alertCount > 0 ? `Alertas: ${alertCount} ${alertCount === 1 ? 'activa' : 'activas'}` : 'Alertas: sin alertas activas'
+  const alertsLabel = unreadAlertCount > 0 ? `Alertas: ${unreadAlertCount} sin leer` : 'Alertas: ninguna sin leer'
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
@@ -53,12 +52,12 @@ const AppHeader = forwardRef(function AppHeader({ drawerOpen, onOpenMenu, alertC
             }
           >
             <Bell className="h-4 w-4" aria-hidden="true" />
-            {alertCount > 0 && (
+            {unreadAlertCount > 0 && (
               <span
                 aria-hidden="true"
-                className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white"
+                className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold tabular-nums text-white ring-2 ring-white"
               >
-                {alertCount > 99 ? '99+' : alertCount}
+                {unreadAlertCount > 9 ? '9+' : unreadAlertCount}
               </span>
             )}
           </NavLink>
