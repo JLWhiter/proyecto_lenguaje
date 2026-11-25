@@ -17,7 +17,8 @@ export default function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const redirectTo = location.state?.from || '/dashboard'
+  const redirectTo = location.state?.from || '/app'
+  const sessionExpired = location.state?.reason === 'expired'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -98,6 +99,12 @@ export default function LoginPage() {
               Ingresa tus credenciales para acceder de forma segura.
             </p>
           </div>
+
+          {sessionExpired && !serverError && (
+            <Alert tone="info" className="mb-5">
+              Tu sesión expiró. Inicia sesión nuevamente para continuar.
+            </Alert>
+          )}
 
           {serverError && (
             <Alert tone="error" className="mb-5">

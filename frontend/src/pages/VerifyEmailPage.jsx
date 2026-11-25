@@ -67,10 +67,10 @@ export default function VerifyEmailPage() {
                 <p className="mt-1.5 text-[12.5px] leading-relaxed text-[#64748B]">{state.message}</p>
               </div>
               <Link
-                to={user ? '/cuenta' : '/login'}
+                to={user ? '/app' : '/login'}
                 className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#10B981] to-[#059669] text-[14px] font-bold text-white shadow-[0_14px_28px_-14px_rgba(5,150,105,0.9)] transition hover:-translate-y-0.5"
               >
-                {user ? 'Ir a mi cuenta' : 'Iniciar sesión'}
+                {user ? 'Ir a Finova' : 'Iniciar sesión'}
                 <ArrowRightIcon className="h-4 w-4" />
               </Link>
             </div>
@@ -81,10 +81,10 @@ export default function VerifyEmailPage() {
               <h1 className="text-[21px] font-extrabold text-[#111827]">No se pudo verificar</h1>
               <Alert tone="error">{state.message}</Alert>
               <Link
-                to="/login"
+                to={user ? '/app' : '/login'}
                 className="inline-flex text-[13px] font-bold text-[#047857] hover:text-[#10B981] hover:underline"
               >
-                Volver al inicio de sesión
+                {user ? 'Volver a Finova' : 'Volver al inicio de sesión'}
               </Link>
             </div>
           )}

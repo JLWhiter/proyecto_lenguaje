@@ -147,7 +147,7 @@ export default function RegisterPage() {
         passwordConfirm: form.passwordConfirm,
         acceptTerms: form.acceptTerms,
       })
-      navigate('/cuenta', {
+      navigate('/app', {
         replace: true,
         state: { justRegistered: true, emailDeliveryConfigured: data.email_delivery_configured },
       })

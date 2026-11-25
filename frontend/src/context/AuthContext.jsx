@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { setUnauthorizedHandler } from '../lib/api'
 import { authService } from '../services/authService'
 
 const AuthContext = createContext(null)
@@ -6,6 +7,24 @@ const AuthContext = createContext(null)
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [checking, setChecking] = useState(true)
+  const [sessionExpired, setSessionExpired] = useState(false)
+  const userRef = useRef(null)
+
+  useEffect(() => {
+    userRef.current = user
+  }, [user])
+
+  // Cualquier 401 de la API (fuera de login/registro) significa que la sesión ya no es válida:
+  // limpiamos al usuario y ProtectedRoute redirige a /login con el aviso "Tu sesión expiró".
+  useEffect(
+    () =>
+      setUnauthorizedHandler(() => {
+        if (userRef.current) setSessionExpired(true)
+        userRef.current = null
+        setUser(null)
+      }),
+    [],
+  )
 
   useEffect(() => {
     let active = true
@@ -29,12 +48,14 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (credentials) => {
     const data = await authService.login(credentials)
+    setSessionExpired(false)
     setUser(data.user)
     return data
   }, [])
 
   const register = useCallback(async (payload) => {
     const data = await authService.register(payload)
+    setSessionExpired(false)
     setUser(data.user)
     return data
   }, [])
@@ -42,7 +63,11 @@ export function AuthProvider({ children }) {
   const logout = useCallback(async () => {
     try {
       await authService.logout()
+    } catch {
+      // Si la sesión ya había expirado el backend responde 401; igual cerramos localmente.
     } finally {
+      userRef.current = null
+      setSessionExpired(false)
       setUser(null)
     }
   }, [])
@@ -54,8 +79,8 @@ export function AuthProvider({ children }) {
   }, [])
 
   const value = useMemo(
-    () => ({ user, checking, login, register, logout, refreshUser }),
-    [user, checking, login, register, logout, refreshUser],
+    () => ({ user, checking, sessionExpired, login, register, logout, refreshUser }),
+    [user, checking, sessionExpired, login, register, logout, refreshUser],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

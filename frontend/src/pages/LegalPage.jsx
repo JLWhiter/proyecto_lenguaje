@@ -3,6 +3,7 @@ import Brand from '../components/auth/Brand'
 import AuthCard from '../components/auth/AuthCard'
 import Alert from '../components/auth/Alert'
 import { ArrowLeftIcon } from '../components/icons'
+import { useAuth } from '../context/AuthContext'
 
 const CONTENT = {
   terminos: {
@@ -59,18 +60,20 @@ const CONTENT = {
 
 export default function LegalPage({ kind = 'terminos' }) {
   const content = CONTENT[kind] ?? CONTENT.terminos
+  const { user } = useAuth()
+  const back = user ? { to: '/app/configuracion', label: 'Volver a Finova' } : { to: '/registro', label: 'Volver al registro' }
 
   return (
     <div className="auth-page relative min-h-screen overflow-x-clip">
       <main className="relative mx-auto w-full max-w-[700px] px-4 py-8 sm:py-10">
         <Link
-          to="/registro"
+          to={back.to}
           className="mb-6 inline-flex items-center gap-2 text-[12px] font-semibold text-[#64748B] transition hover:text-[#047857]"
         >
           <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/80 bg-white/70 shadow-sm">
             <ArrowLeftIcon className="h-4 w-4" />
           </span>
-          Volver al registro
+          {back.label}
         </Link>
 
         <Brand badge={false} className="items-start text-left" />
