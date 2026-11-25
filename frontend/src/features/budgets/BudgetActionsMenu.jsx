@@ -1,9 +1,11 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { MoreVertical } from 'lucide-react'
 import { IconButton, Modal } from '../../components/ui'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
 
 const SM_QUERY = '(min-width: 640px)'
+/** Espacio libre mínimo (px) que debe quedar entre el menú y el borde de la ventana. */
+const VIEWPORT_MARGIN = 12
 
 const TONES = {
   default: { row: 'text-slate-700 hover:bg-slate-50', icon: 'bg-slate-100 text-slate-600' },
@@ -63,10 +65,22 @@ export default function BudgetActionsMenu({ budgetName, items, disabled = false 
 function DropdownMenu({ id, label, items, triggerRef, onSelect, onClose }) {
   const menuRef = useRef(null)
   const onCloseRef = useRef(onClose)
+  // 'bottom' (debajo del botón) o 'top' si abajo no cabe y arriba hay más espacio. Se decide antes de pintar.
+  const [placement, setPlacement] = useState('bottom')
 
   useEffect(() => {
     onCloseRef.current = onClose
   })
+
+  useLayoutEffect(() => {
+    const trigger = triggerRef.current?.getBoundingClientRect()
+    const menu = menuRef.current?.getBoundingClientRect()
+    if (!trigger || !menu) return
+    const needed = menu.height + VIEWPORT_MARGIN
+    const below = window.innerHeight - trigger.bottom
+    const above = trigger.top
+    if (below < needed && above > below) setPlacement('top')
+  }, [triggerRef])
 
   useEffect(() => {
     const menu = menuRef.current
@@ -114,7 +128,10 @@ function DropdownMenu({ id, label, items, triggerRef, onSelect, onClose }) {
       role="menu"
       aria-label={label}
       onKeyDown={handleKeyDown}
-      className="absolute right-0 top-full z-30 mt-1 w-60 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10"
+      data-placement={placement}
+      className={`absolute right-0 z-30 w-60 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10 ${
+        placement === 'top' ? 'bottom-full mb-1' : 'top-full mt-1'
+      }`}
     >
       {items.map((item) => {
         const tone = TONES[item.tone] ?? TONES.default

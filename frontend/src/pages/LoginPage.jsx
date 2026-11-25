@@ -207,8 +207,8 @@ export default function LoginPage() {
 
         <SecurityFooter />
 
-        <p className="mt-5 text-center text-[10px] tracking-wide text-[#8A9A94]">
-          © 2026 Finova Technologies S.A.C.
+        <p className="mt-5 text-center text-[10px] tracking-wide text-[#64748B]">
+          Finova es un proyecto académico.
         </p>
         </div>
       </main>

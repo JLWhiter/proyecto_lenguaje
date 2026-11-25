@@ -12,11 +12,46 @@ export const TAX_YEARS = Object.keys(UIT_BY_YEAR)
   .map(Number)
   .sort((a, b) => b - a)
 
-/** Año por defecto: el actual (hora de Lima) si tiene UIT; si no, el último registrado. */
-export const DEFAULT_YEAR = (() => {
-  const year = Number(currentMonth().slice(0, 4))
-  return UIT_BY_YEAR[year] ? year : TAX_YEARS[0]
-})()
+/** Año calendario actual (hora de Lima). */
+export const CURRENT_YEAR = Number(currentMonth().slice(0, 4))
+
+/** Año por defecto: el actual si tiene UIT; si no, el último registrado. */
+export const DEFAULT_YEAR = UIT_BY_YEAR[CURRENT_YEAR] ? CURRENT_YEAR : TAX_YEARS[0]
+
+/** El Impuesto a la Renta peruano se calcula en soles. */
+export const TAX_CURRENCY = 'PEN'
+
+/**
+ * De dónde sale el ingreso de un resultado de la API:
+ *   'simulated'  monto escrito por el usuario (`fuente: 'manual'`)
+ *   'projected'  año en curso, proyección del año completo (`proyectado: true`)
+ *   'partial'    año en curso, solo lo registrado hasta hoy (dato parcial)
+ *   'registered' año cerrado, con los ingresos registrados
+ * Sin los campos nuevos de la API (`anio_en_curso`, `proyectado`) se deduce del año.
+ */
+export function resultMode(result) {
+  if (result.fuente === 'manual') return 'simulated'
+  if (result.proyectado) return 'projected'
+  const inProgress = result.anio_en_curso ?? Number(result.anio) === CURRENT_YEAR
+  return inProgress ? 'partial' : 'registered'
+}
+
+/**
+ * Avance del año en curso con los ingresos registrados (null en otro caso):
+ *   { recorded, months, projected }  — `projected` es null si la API no puede proyectar
+ *   (o todavía no tiene los campos nuevos). `knownProjection` cubre una respuesta sin `ingreso_proyectado`.
+ */
+export function yearProgress(result, knownProjection = null) {
+  if (!result || result.fuente !== 'movimientos' || resultMode(result) === 'registered') return null
+  const apiProjection = result.ingreso_proyectado
+  const projected = apiProjection === null || apiProjection === undefined ? knownProjection : toNumber(apiProjection)
+  const months = toNumber(result.meses_con_ingresos)
+  return {
+    recorded: toNumber(result.ingreso_registrado ?? result.ingreso_bruto),
+    months: months > 0 ? months : null,
+    projected: projected === null || projected === undefined ? null : projected,
+  }
+}
 
 export const FIXED_DEDUCTION_UIT = 7
 export const MAX_ADDITIONAL_DEDUCTION_UIT = 3

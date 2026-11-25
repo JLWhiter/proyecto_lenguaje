@@ -82,19 +82,19 @@ export default function BudgetCard({ budget, phase, movementsTo, highlighted = f
 
       <dl className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
         <div className="min-w-0">
-          <dt className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Límite</dt>
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Límite</dt>
           <dd className="mt-1 break-words text-sm font-semibold text-slate-800 sm:text-base">
             <Money value={budget.presupuesto} />
           </dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Gastado</dt>
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Gastado</dt>
           <dd className="mt-1 break-words text-sm font-semibold text-slate-800 sm:text-base">
             <Money value={budget.gastado} />
           </dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{over ? 'Excedido' : 'Restante'}</dt>
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{over ? 'Excedido' : 'Restante'}</dt>
           <dd className={`mt-1 break-words text-sm font-semibold sm:text-base ${over ? 'text-red-600' : 'text-emerald-700'}`}>
             <Money value={remaining} absolute />
           </dd>

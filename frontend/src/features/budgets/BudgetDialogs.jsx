@@ -16,6 +16,7 @@ import {
   guessIcon,
   looseCategoryKey,
   normalizeAmount,
+  overspent,
   rebalanceDefaults,
   shortfall,
 } from './budgetModel'
@@ -439,21 +440,28 @@ export function RebalanceDialog({ period, periodLabel, phase, budgets = [], init
       ? `Margen libre: ${money(margin)} (límite ${money(source.presupuesto)}, gastado ${money(source.gastado)}).`
       : `Sin margen libre: ya gastó ${money(source.gastado)} de ${money(source.presupuesto)}.`
     : null
-  const targetHint = target
-    ? need > 0
-      ? `Gastado ${money(target.gastado)} de ${money(target.presupuesto)}. ${
-          toNumber(target.gastado) > toNumber(target.presupuesto) ? 'Le faltan' : 'Al ritmo actual le faltarán'
-        } ${money(need)}.`
-      : `Gastado ${money(target.gastado)} de ${money(target.presupuesto)} (${formatPct(target.porcentaje)}).`
-    : null
+  // Destino: exceso que ya tiene (gastado − límite) y, en el mes en curso, lo que le faltará al ritmo actual
+  // (`need`, proyección − límite). Se muestran los dos para que cuadren con la tarjeta y la alerta.
+  const exceeded = target ? overspent(target) : 0
+  let targetHint = null
+  if (target) {
+    const spentText = `Gastado ${money(target.gastado)} de ${money(target.presupuesto)}`
+    if (exceeded > 0 && need > exceeded) targetHint = `${spentText}. Ya se pasó por ${money(exceeded)} · al ritmo actual le faltarán ${money(need)}.`
+    else if (exceeded > 0) targetHint = `${spentText}. Ya se pasó por ${money(exceeded)}.`
+    else if (need > 0) targetHint = `${spentText}. Al ritmo actual le faltarán ${money(need)}.`
+    else targetHint = `${spentText} (${formatPct(target.porcentaje)}).`
+  }
 
   const amountPicks = []
   if (source && target && source.id !== target.id && margin > 0) {
-    if (need > 0) {
-      const cover = Math.min(need, margin)
-      amountPicks.push({ key: 'need', value: cover.toFixed(2), label: `${need > margin ? 'Todo lo posible' : 'Cubrir lo que falta'} (${money(cover)})` })
+    const addPick = (key, amount, label) => {
+      const value = Math.min(amount, margin).toFixed(2)
+      if (amountPicks.some((pick) => pick.value === value)) return
+      amountPicks.push({ key, value, label: `${amount > margin ? 'Todo lo posible' : label} (${money(value)})` })
     }
-    if (need <= 0 || need < margin) amountPicks.push({ key: 'all', value: margin.toFixed(2), label: `Todo el margen (${money(margin)})` })
+    if (exceeded > 0) addPick('exceeded', exceeded, 'Cubrir el exceso')
+    if (need > exceeded) addPick('need', need, exceeded > 0 ? 'Cubrir hasta fin de mes' : 'Cubrir lo que falta')
+    if (need < margin) addPick('all', margin, 'Todo el margen')
   }
   const pickedAmount = amountIsValid ? typedAmount.toFixed(2) : null
   const picks = amountPicks.map((pick) => ({ ...pick, active: pickedAmount === pick.value }))

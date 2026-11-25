@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useId, useMemo, useRef, useState } from 'react'
 import { ArrowRightLeft, ChevronLeft, ChevronRight, Copy, Plus, RotateCw, SearchX, Target } from 'lucide-react'
 import { EmptyState, ErrorState, FilterChips, IconButton, Skeleton } from '../../components/ui'
 import { usePeriod } from '../../context/PeriodContext'
@@ -6,7 +6,17 @@ import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { monthLabel, shiftMonth } from '../../lib/period'
 import BudgetCard from './BudgetCard'
 import { BudgetFormDialog, RebalanceDialog } from './BudgetDialogs'
-import { BUDGET_STATES, FILTER_ALL, freeMargin, lastPlannableMonth, movementsSearch, periodPhase, stateOf, stylesFor } from './budgetModel'
+import {
+  BUDGET_STATES,
+  categoryKey,
+  FILTER_ALL,
+  freeMargin,
+  lastPlannableMonth,
+  movementsSearch,
+  periodPhase,
+  stateOf,
+  stylesFor,
+} from './budgetModel'
 import BudgetSummary from './BudgetSummary'
 import MonthInsight from './MonthInsight'
 import { useBudgetActions, useBudgetHighlight, useBudgets } from './useBudgets'
@@ -36,6 +46,7 @@ export default function BudgetsPage() {
   const [filter, setFilter] = useState(FILTER_ALL)
   const [dialog, setDialog] = useState(null)
   const listTitleRef = useRef(null)
+  const copyReasonId = useId()
   const closeDialog = () => setDialog(null)
 
   const ready = budgets.status === 'ready'
@@ -43,10 +54,25 @@ export default function BudgetsPage() {
   const items = useMemo(() => data?.categorias ?? [], [data])
   const isEmpty = ready && items.length === 0
   const canRebalance = items.length >= 2 && phase !== 'past'
+  const showToolbarCopy = ready && items.length > 0 && phase !== 'past'
 
-  // Solo se pide el mes anterior cuando este está vacío (para ofrecer copiarlo).
-  const previous = useBudgets(previousMonth, { enabled: isEmpty })
-  const previousCount = previous.status === 'ready' && previous.data ? (previous.data.categorias ?? []).length : null
+  // El mes anterior se pide solo cuando se ofrece copiarlo (mes vacío o botón "Copiar de…"),
+  // para saber si hay algo que copiar.
+  const previous = useBudgets(previousMonth, { enabled: isEmpty || showToolbarCopy })
+  const previousItems = previous.status === 'ready' && previous.data ? previous.data.categorias ?? [] : null
+  const previousCount = previousItems ? previousItems.length : null
+  // Presupuestos del mes anterior cuya categoría aún no existe en este mes (los que el backend copiaría).
+  const copyableCount = useMemo(() => {
+    if (!previousItems) return null
+    const current = new Set(items.map((item) => categoryKey(item.nombre)))
+    return previousItems.filter((item) => !current.has(categoryKey(item.nombre))).length
+  }, [previousItems, items])
+  const copyBlockedReason =
+    copyableCount !== 0
+      ? null
+      : previousCount === 0
+        ? `Nada que copiar: ${previousLabel} no tiene presupuestos.`
+        : `Nada que copiar: ya tienes en ${periodLabel} todas las categorías de ${previousLabel}.`
 
   const highlightId = useBudgetHighlight({
     items,
@@ -55,6 +81,8 @@ export default function BudgetsPage() {
     onReveal: (budget) => {
       if (filter !== FILTER_ALL && stateOf(budget) !== filter) setFilter(FILTER_ALL)
     },
+    // "Ajustar presupuesto" desde una alerta (`&accion=editar`): abre la edición tras resaltar la tarjeta.
+    onEdit: (budget) => setDialog({ type: 'form', budget }),
   })
 
   const counts = useMemo(() => {
@@ -140,8 +168,10 @@ export default function BudgetsPage() {
                   type="button"
                   onClick={() => !copying && actions.copyFrom(previousMonth)}
                   aria-disabled={copying || undefined}
-                  className={SECONDARY_BUTTON}
-                  title={`Copia los presupuestos de ${previousLabel} que aún no tengas en ${periodLabel}`}
+                  disabled={Boolean(copyBlockedReason) && !copying}
+                  aria-describedby={copyBlockedReason ? copyReasonId : undefined}
+                  className={`${SECONDARY_BUTTON} disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 disabled:hover:bg-slate-50`}
+                  title={copyBlockedReason ?? `Copia los presupuestos de ${previousLabel} que aún no tengas en ${periodLabel}`}
                 >
                   <Copy className="h-4 w-4 shrink-0" aria-hidden="true" />
                   <span className="truncate">{copying ? 'Copiando…' : `Copiar de ${previousLabel}`}</span>
@@ -156,6 +186,11 @@ export default function BudgetsPage() {
             </div>
           )}
         </div>
+        {showToolbarCopy && copyBlockedReason && (
+          <p id={copyReasonId} className="mt-2 text-xs leading-5 text-slate-600 md:text-right">
+            {copyBlockedReason}
+          </p>
+        )}
         {phase === 'past' && ready && items.length > 0 && (
           <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
             Estás viendo un mes cerrado: sirve de referencia. Puedes corregir límites, pero las sugerencias y el rebalanceo solo aplican al mes en curso o a

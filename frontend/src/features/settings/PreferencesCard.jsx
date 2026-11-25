@@ -19,8 +19,8 @@ export default function PreferencesCard() {
         <span className="min-w-0">
           <span className="block font-semibold text-slate-800">Mostrar saldos</span>
           <span id="settings-show-amounts-hint" className="mt-1 block text-sm leading-snug text-slate-500">
-            Muestra el saldo total, los ingresos y los gastos en el resumen. Desactívalo para ocultarlos (••••) si usas
-            Finova en un lugar público.
+            Desactívalo para ocultar los saldos y montos (••••) en toda la aplicación si usas Finova en un lugar público.
+            Los porcentajes siguen visibles.
           </span>
         </span>
         <span className="flex shrink-0 flex-col items-end gap-1.5 pt-0.5">

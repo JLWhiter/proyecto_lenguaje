@@ -10,6 +10,10 @@ export const BUDGET_MUTATION_TAGS = ['budgets', 'alerts', 'dashboard']
 /** Parámetro con el que Alertas y el Resumen enlazan a un presupuesto concreto. */
 export const HIGHLIGHT_PARAM = 'presupuesto'
 
+/** Acción opcional junto a `?presupuesto=<id>`: `?accion=editar` abre "Editar presupuesto" tras resaltarlo. */
+export const ACTION_PARAM = 'accion'
+export const EDIT_ACTION = 'editar'
+
 /** Hasta cuántos meses hacia adelante se puede planificar desde esta pantalla. */
 export const PLANNING_MONTHS_AHEAD = 1
 
@@ -108,6 +112,12 @@ export function formatPct(value) {
 /** Lo que aún se puede mover del límite (límite − gastado, nunca negativo), en céntimos exactos. */
 export function freeMargin(budget) {
   const cents = Math.round(toNumber(budget?.presupuesto) * 100) - Math.round(toNumber(budget?.gastado) * 100)
+  return Math.max(0, cents) / 100
+}
+
+/** Cuánto se pasó ya un presupuesto (gastado − límite), en céntimos exactos; 0 si no se pasó. */
+export function overspent(budget) {
+  const cents = Math.round(toNumber(budget?.gastado) * 100) - Math.round(toNumber(budget?.presupuesto) * 100)
   return Math.max(0, cents) / 100
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { KeyRound, LogOut, MonitorSmartphone, ShieldCheck } from 'lucide-react'
 import Alert from '../../components/auth/Alert'
@@ -29,7 +29,36 @@ function clientErrors(form) {
   return errors
 }
 
+/**
+ * Aviso "Contraseña actualizada…" (toast) de esta pantalla. Es de un solo uso: se cierra al salir de
+ * Configuración o al cerrar sesión, para que no tape el formulario de /login. El aviso propio de
+ * "cerraste sesión en todos tus dispositivos" viaja aparte (loginNotice).
+ */
+function usePasswordToast() {
+  const toast = useToast()
+  const idRef = useRef(null)
+
+  const dismiss = useCallback(() => {
+    if (idRef.current !== null) toast.dismiss(idRef.current)
+    idRef.current = null
+  }, [toast])
+
+  const show = useCallback(
+    (message) => {
+      dismiss()
+      idRef.current = toast.success(message)
+    },
+    [dismiss, toast],
+  )
+
+  // Al desmontar (navegar a otra pantalla o a /login tras cerrar sesión) el aviso ya no aplica.
+  useEffect(() => dismiss, [dismiss])
+
+  return { show, dismiss }
+}
+
 export default function SecurityCard() {
+  const passwordToast = usePasswordToast()
   return (
     <SettingsCard
       id="settings-security"
@@ -37,15 +66,14 @@ export default function SecurityCard() {
       title="Seguridad"
       description="Cambia tu contraseña y controla dónde tienes la sesión abierta."
     >
-      <PasswordChangeForm />
-      <SessionsPanel />
+      <PasswordChangeForm onChanged={passwordToast.show} />
+      <SessionsPanel onLeave={passwordToast.dismiss} />
     </SettingsCard>
   )
 }
 
-function PasswordChangeForm() {
+function PasswordChangeForm({ onChanged }) {
   const { user, updateUser } = useAuth()
-  const toast = useToast()
   const currentRef = useRef(null)
   const nextRef = useRef(null)
   const confirmRef = useRef(null)
@@ -108,9 +136,7 @@ function PasswordChangeForm() {
       updateUser(data?.user)
       setForm(EMPTY)
       setTouched({})
-      toast.success(
-        `${data?.detail || 'Contraseña actualizada correctamente.'} Las sesiones abiertas en otros dispositivos se cerraron.`,
-      )
+      onChanged(`${data?.detail || 'Contraseña actualizada correctamente.'} Las sesiones abiertas en otros dispositivos se cerraron.`)
     } catch (error) {
       const mapped = {}
       const other = []
@@ -212,7 +238,7 @@ function PasswordChangeForm() {
   )
 }
 
-function SessionsPanel() {
+function SessionsPanel({ onLeave }) {
   const { logout, logoutAll } = useAuth()
   const navigate = useNavigate()
   const confirm = useConfirm()
@@ -221,6 +247,7 @@ function SessionsPanel() {
 
   async function handleLogout() {
     setBusy('one')
+    onLeave()
     try {
       await logout()
     } finally {
@@ -239,6 +266,7 @@ function SessionsPanel() {
     if (!ok) return
 
     setBusy('all')
+    onLeave()
     // Se fija antes de limpiar el usuario: la redirección de ProtectedRoute puede llegar primero.
     setLoginNotice('Cerraste sesión en todos tus dispositivos.')
     try {

@@ -9,7 +9,7 @@ import { budgetsApi } from '../../lib/api/budgets'
 import { categoriesApi } from '../../lib/api/categories'
 import { toNumber } from '../../lib/format'
 import { monthLabel } from '../../lib/period'
-import { BUDGET_MUTATION_TAGS, HIGHLIGHT_PARAM } from './budgetModel'
+import { ACTION_PARAM, BUDGET_MUTATION_TAGS, EDIT_ACTION, HIGHLIGHT_PARAM } from './budgetModel'
 
 /**
  * Presupuestos del mes `period` (AAAA-MM). Se recarga con invalidate('budgets').
@@ -150,20 +150,31 @@ export function useBudgetActions({ period, periodLabel }) {
 
 const HIGHLIGHT_MS = 3200
 
+const SCROLL_DELAY_MS = 160
+/** Tiempo para que termine el desplazamiento suave antes de abrir el diálogo de edición. */
+const EDIT_DELAY_MS = 600
+
 /**
  * `?presupuesto=<id>` (enlaces de Alertas y del Resumen): cuando cargan los datos del mes,
  * desplaza la vista hasta esa tarjeta, la resalta unos segundos y quita el parámetro de la URL.
+ * Con `&accion=editar` ("Ajustar presupuesto" desde una alerta), además abre `onEdit(budget)`
+ * después de resaltarla.
  * `onReveal(budget)` permite, por ejemplo, limpiar un filtro que la ocultaba.
  */
-export function useBudgetHighlight({ items, ready, periodLabel, onReveal }) {
+export function useBudgetHighlight({ items, ready, periodLabel, onReveal, onEdit }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const requested = searchParams.get(HIGHLIGHT_PARAM)
+  const action = searchParams.get(ACTION_PARAM)
   const [highlightId, setHighlightId] = useState(null)
   const toast = useToast()
   const onRevealRef = useRef(onReveal)
+  const onEditRef = useRef(onEdit)
+  // Presupuesto a editar cuando termine el resaltado (`?accion=editar`).
+  const pendingEditRef = useRef(null)
 
   useEffect(() => {
     onRevealRef.current = onReveal
+    onEditRef.current = onEdit
   })
 
   useEffect(() => {
@@ -173,6 +184,7 @@ export function useBudgetHighlight({ items, ready, periodLabel, onReveal }) {
       (params) => {
         const next = new URLSearchParams(params)
         next.delete(HIGHLIGHT_PARAM)
+        next.delete(ACTION_PARAM)
         return next
       },
       { replace: true },
@@ -181,23 +193,33 @@ export function useBudgetHighlight({ items, ready, periodLabel, onReveal }) {
       toast.info(`Ese presupuesto ya no existe en ${periodLabel}.`)
       return
     }
+    pendingEditRef.current = action === EDIT_ACTION ? found : null
     onRevealRef.current?.(found)
     setHighlightId(found.id)
-  }, [requested, ready, items, periodLabel, setSearchParams, toast])
+  }, [requested, action, ready, items, periodLabel, setSearchParams, toast])
 
   useEffect(() => {
     if (highlightId === null) return undefined
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     // Espera a que la tarjeta esté pintada (y a que el layout termine su scroll al inicio).
     const scrollTimer = window.setTimeout(() => {
       const element = document.getElementById(`presupuesto-${highlightId}`)
       if (!element) return
-      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
       element.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' })
       element.focus({ preventScroll: true })
-    }, 160)
+    }, SCROLL_DELAY_MS)
+    const editTimer = window.setTimeout(
+      () => {
+        const budget = pendingEditRef.current
+        pendingEditRef.current = null
+        if (budget && budget.id === highlightId) onEditRef.current?.(budget)
+      },
+      SCROLL_DELAY_MS + (reduceMotion ? 80 : EDIT_DELAY_MS),
+    )
     const clearTimer = window.setTimeout(() => setHighlightId(null), HIGHLIGHT_MS)
     return () => {
       window.clearTimeout(scrollTimer)
+      window.clearTimeout(editTimer)
       window.clearTimeout(clearTimer)
     }
   }, [highlightId])

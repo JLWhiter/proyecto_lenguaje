@@ -1,27 +1,41 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { DEFAULT_YEAR, parseAmount, parseYear, sameAmount } from './taxRules'
+import { CURRENT_YEAR, DEFAULT_YEAR, parseAmount, parseYear, sameAmount } from './taxRules'
 
 const DEBOUNCE_MS = 400
+
+/** '?proyectar=1' → true · '?proyectar=0' → false · ausente u otro valor → null (por defecto: proyectar). */
+function parseProjectChoice(value) {
+  if (value === '1') return true
+  if (value === '0') return false
+  return null
+}
 
 /**
  * Controles de la pantalla de impuestos guardados en la URL:
  *   ?anio=2025        año (se omite si es el año por defecto)
  *   ?ingreso=60000    modo "Simular un ingreso" (presente aunque esté vacío: `?ingreso=`)
  *   ?deducciones=0    deducciones adicionales (opcional)
+ *   ?proyectar=0|1    año en curso con "Mis ingresos registrados": solo lo registrado (0) o el año
+ *                     completo proyectado (1). Sin el parámetro se proyecta (la opción por defecto).
+ *
+ * `forceSimulate` (moneda distinta de PEN) fija el modo "Simular un ingreso": los movimientos no están
+ * en soles y no sirven para el impuesto peruano.
  *
  * Los inputs de montos trabajan sobre un borrador local que se escribe en la URL 400 ms después
  * de la última tecla; la consulta a la API sale siempre de la URL. `?mes=` y otros parámetros
  * se conservan.
  */
-export function useTaxParams() {
+export function useTaxParams({ forceSimulate = false } = {}) {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const yearParam = parseYear(searchParams.get('anio'))
   const year = yearParam ?? DEFAULT_YEAR
-  const simulate = searchParams.has('ingreso')
+  const simulate = forceSimulate || searchParams.has('ingreso')
   const incomeParam = searchParams.get('ingreso') ?? ''
   const deductionsParam = searchParams.get('deducciones') ?? ''
+  const projectChoice = parseProjectChoice(searchParams.get('proyectar'))
+  const project = projectChoice !== false
 
   const [incomeDraft, setIncomeDraft] = useState(incomeParam)
   const [deductionsDraft, setDeductionsDraft] = useState(deductionsParam)
@@ -38,7 +52,7 @@ export function useTaxParams() {
 
   const latest = useRef(null)
   useLayoutEffect(() => {
-    latest.current = { searchParams, setSearchParams, year, simulate, incomeDraft, deductionsDraft }
+    latest.current = { searchParams, setSearchParams, year, simulate, incomeDraft, deductionsDraft, projectChoice }
   })
 
   /** Escribe en la URL el estado actual (más los cambios indicados) sin crear otra entrada en el historial. */
@@ -61,6 +75,9 @@ export function useTaxParams() {
     const deductions = parseAmount(state.deductionsDraft)
     if (deductions.empty) next.delete('deducciones')
     else if (!deductions.error) next.set('deducciones', deductions.text)
+
+    if (state.projectChoice === null || state.projectChoice === undefined) next.delete('proyectar')
+    else next.set('proyectar', state.projectChoice ? '1' : '0')
 
     if (next.toString() !== state.searchParams.toString()) {
       state.setSearchParams(next, { replace: true })
@@ -87,11 +104,15 @@ export function useTaxParams() {
     [commit],
   )
 
+  /** Año en curso: `true` proyecta el año completo, `false` usa solo lo registrado hasta hoy. */
+  const setProject = useCallback((value) => commit({ projectChoice: Boolean(value) }), [commit])
+
   const income = parseAmount(incomeParam)
   const deductions = parseAmount(deductionsParam)
   const incomeText = income.text
   const deductionsText = deductions.text
   const waitingForIncome = simulate && !incomeText
+  const projectable = !simulate && year === CURRENT_YEAR
 
   // Parámetros para la API (null = falta el ingreso a simular, no se consulta).
   const query = useMemo(() => {
@@ -100,8 +121,9 @@ export function useTaxParams() {
       anio: year,
       ingreso_anual: simulate ? incomeText : undefined,
       deducciones_adicionales: deductionsText,
+      proyectar: projectable && project ? 1 : undefined,
     }
-  }, [waitingForIncome, year, simulate, incomeText, deductionsText])
+  }, [waitingForIncome, year, simulate, incomeText, deductionsText, projectable, project])
 
   const incomeDraftParsed = parseAmount(incomeDraft)
   const deductionsDraftParsed = parseAmount(deductionsDraft)
@@ -110,6 +132,10 @@ export function useTaxParams() {
     year,
     yearFromUrl: yearParam,
     simulate,
+    simulateLocked: forceSimulate,
+    /** El año elegido es el actual y el ingreso sale de los movimientos: aplica la proyección. */
+    projectable,
+    project,
     query,
     waitingForIncome,
     incomeDraft,
@@ -124,5 +150,6 @@ export function useTaxParams() {
     pending: (simulate && !sameAmount(incomeDraft, incomeParam)) || !sameAmount(deductionsDraft, deductionsParam),
     setYear,
     setSimulate,
+    setProject,
   }
 }

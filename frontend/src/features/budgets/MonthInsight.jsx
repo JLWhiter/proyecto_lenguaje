@@ -70,7 +70,7 @@ export default function MonthInsight({ insight, canApply, applying = false, onAp
         </div>
       )}
 
-      <p className="mt-4 text-xs leading-5 text-slate-500">Calculado con tus presupuestos y los gastos que registraste en Movimientos.</p>
+      <p className="mt-4 text-xs leading-5 text-slate-600">Calculado con tus presupuestos y los gastos que registraste en Movimientos.</p>
     </section>
   )
 }

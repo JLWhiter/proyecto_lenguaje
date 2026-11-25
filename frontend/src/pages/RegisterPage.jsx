@@ -21,6 +21,11 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { isStrongPassword, isValidEmail } from '../lib/validation'
 
+// Enlace dentro de la frase de los términos: no se parte en dos líneas y su ::before (absoluto, 13 px arriba
+// y abajo) agranda el área táctil a 40 px sin cambiar el alto de la línea.
+const TERMS_LINK =
+  "relative whitespace-nowrap rounded font-bold text-[#047857] underline decoration-[#A7D9C8] underline-offset-2 before:absolute before:-inset-x-1 before:-inset-y-[13px] before:content-[''] hover:text-[#10B981]"
+
 export default function RegisterPage() {
   const { register } = useAuth()
   const navigate = useNavigate()
@@ -189,7 +194,7 @@ export default function RegisterPage() {
       <div className="relative flex justify-center px-4">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-[#BFE8D9] bg-white/70 px-3 py-1 text-[10px] font-semibold tracking-wide text-[#047857] shadow-sm backdrop-blur">
           <ShieldCheckIcon className="h-3.5 w-3.5" />
-          Plataforma Segura · Protección en capas
+          Contraseñas con hash · Sesión HttpOnly
         </span>
       </div>
 
@@ -199,7 +204,7 @@ export default function RegisterPage() {
             Crear tu cuenta
           </h1>
           <p className="mt-2 max-w-[500px] text-[13px] leading-relaxed text-[#64748B] sm:text-[13.5px]">
-            Toma el control de tus finanzas personales y presupuestos con analítica inteligente.
+            Registra tus cuentas, ingresos y gastos, define presupuestos por categoría y revisa en qué se va tu dinero cada mes.
           </p>
         </div>
 
@@ -330,21 +335,15 @@ export default function RegisterPage() {
                     className="h-4 w-4 shrink-0 rounded border-[#CBD5E1] accent-[#059669] focus:ring-[#10B981]/30"
                   />
                 </label>
-                <label htmlFor="accept-terms" className="block cursor-pointer py-[11px] pr-2 text-[11.5px] leading-relaxed text-[#475569]">
+                {/* Líneas de 40 px (alineadas con el área de la casilla): cada enlace amplía su área táctil a 40 px
+                    de alto con ::before sin mover el texto, y dos enlaces en líneas vecinas no se tapan. */}
+                <label htmlFor="accept-terms" className="block cursor-pointer pr-2 text-[12px] leading-10 text-[#475569]">
                   Acepto los{' '}
-                  <Link
-                    to="/terminos"
-                    onClick={(event) => event.stopPropagation()}
-                    className="font-bold text-[#047857] underline decoration-[#A7D9C8] underline-offset-2 hover:text-[#10B981]"
-                  >
+                  <Link to="/terminos" onClick={(event) => event.stopPropagation()} className={TERMS_LINK}>
                     Términos de Servicio
                   </Link>{' '}
                   y la{' '}
-                  <Link
-                    to="/privacidad"
-                    onClick={(event) => event.stopPropagation()}
-                    className="font-bold text-[#047857] underline decoration-[#A7D9C8] underline-offset-2 hover:text-[#10B981]"
-                  >
+                  <Link to="/privacidad" onClick={(event) => event.stopPropagation()} className={TERMS_LINK}>
                     Política de Privacidad
                   </Link>{' '}
                   de Finova.
@@ -378,17 +377,17 @@ export default function RegisterPage() {
 
         <footer className="mt-7 animate-rise [animation-delay:120ms]">
           <div className="flex flex-col items-center justify-center gap-2.5 text-[11px] font-medium text-[#64748B] sm:flex-row sm:gap-7">
-            <span className="inline-flex items-center gap-1.5">
-              <CheckCircleIcon className="h-3.5 w-3.5 text-[#10B981]" />
-              Sin comisiones ocultas
+            <span className="inline-flex items-center gap-1.5 text-center">
+              <CheckCircleIcon className="h-3.5 w-3.5 shrink-0 text-[#10B981]" />
+              Alertas al acercarte al límite de un presupuesto o superarlo
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <CheckCircleIcon className="h-3.5 w-3.5 text-[#10B981]" />
-              Alertas inteligentes de presupuesto
+              <CheckCircleIcon className="h-3.5 w-3.5 shrink-0 text-[#10B981]" />
+              Exporta tus movimientos en CSV
             </span>
           </div>
-          <p className="mt-5 text-center text-[10px] leading-relaxed text-[#8A9A94]">
-            © 2026 Finova Technologies S.A.C. Todos los derechos reservados.
+          <p className="mt-5 text-center text-[10px] leading-relaxed text-[#64748B]">
+            Finova es un proyecto académico: no es una entidad financiera ni mueve dinero real.
           </p>
         </footer>
       </main>

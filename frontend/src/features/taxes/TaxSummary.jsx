@@ -1,6 +1,83 @@
-import { CalendarClock, CheckCircle2, Percent, Receipt } from 'lucide-react'
+import { CalendarClock, CheckCircle2, Hourglass, Percent, Receipt } from 'lucide-react'
 import { formatPercent, toNumber } from '../../lib/format'
-import { FIXED_DEDUCTION_UIT, soles, splitDeductions } from './taxRules'
+import TaxAmount, { useAmountsHidden } from './TaxAmount'
+import { FIXED_DEDUCTION_UIT, resultMode, soles, splitDeductions } from './taxRules'
+
+const MODE_BADGE = {
+  simulated: { label: 'Simulación', className: 'bg-sky-50 text-sky-700' },
+  projected: { label: 'Proyección del año', className: 'bg-indigo-50 text-indigo-700' },
+  partial: { label: 'Registrado hasta hoy', className: 'bg-amber-50 text-amber-800' },
+  registered: { label: 'Con tus ingresos registrados', className: 'bg-emerald-50 text-emerald-700' },
+}
+
+/** " (S/ 1,234.00)" o nada si los montos están ocultos. */
+function InlineAmount({ value, hidden }) {
+  if (hidden) return null
+  return (
+    <>
+      {' '}
+      (<span className="tabular-nums">{soles(value)}</span>)
+    </>
+  )
+}
+
+/** Renta neta 0: explica por qué no hay impuesto, sin concluirlo de un dato parcial. */
+function NoTaxNote({ mode, year, gross, fixedLimit }) {
+  const hidden = useAmountsHidden()
+  const belowFixed = gross <= fixedLimit
+
+  if (mode === 'partial') {
+    return (
+      <div className="mt-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <Hourglass className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
+        <div className="min-w-0">
+          <p className="font-semibold">Con lo registrado hasta hoy, todavía no hay impuesto</p>
+          <p className="mt-1 leading-6">
+            {belowFixed ? (
+              <>
+                Lo que llevas en {year}
+                <InlineAmount value={gross} hidden={hidden} /> no supera las 7 UIT
+                <InlineAmount value={fixedLimit} hidden={hidden} />. Es un dato parcial: el año aún no termina y, si sigues recibiendo ingresos,
+                podrías superar ese monto y pagar impuesto.
+              </>
+            ) : (
+              <>
+                Las deducciones cubren lo que llevas en {year}. Es un dato parcial: el año aún no termina y, si sigues recibiendo ingresos, podrías
+                pagar impuesto.
+              </>
+            )}{' '}
+            Elige «Proyectar el año completo» para estimar el año entero.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const projected = mode === 'projected'
+  return (
+    <div className="mt-5 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+      <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" aria-hidden="true" />
+      <div className="min-w-0">
+        <p className="font-semibold">
+          {projected ? `Con la proyección, no pagarías Impuesto a la Renta en ${year}` : `No pagarías Impuesto a la Renta en ${year}`}
+        </p>
+        <p className="mt-1 leading-6">
+          {belowFixed ? (
+            <>
+              {projected ? 'Tu ingreso anual proyectado' : 'Tu ingreso anual'}
+              <InlineAmount value={gross} hidden={hidden} /> no supera las 7 UIT
+              <InlineAmount value={fixedLimit} hidden={hidden} /> que se deducen de toda renta de trabajo, así que no queda renta neta sobre la cual
+              pagar.
+            </>
+          ) : (
+            <>Las deducciones cubren todo tu ingreso, así que la renta neta es cero y no hay impuesto.</>
+          )}
+          {projected && ' Es una estimación: si tus ingresos suben en lo que queda del año, podría cambiar.'}
+        </p>
+      </div>
+    </div>
+  )
+}
 
 /**
  * Tarjeta principal: impuesto anual, tasa efectiva y retención mensual aproximada.
@@ -11,7 +88,8 @@ export function TaxHero({ result, status }) {
   const gross = toNumber(result.ingreso_bruto)
   const net = toNumber(result.renta_neta)
   const uit = toNumber(result.uit)
-  const simulated = result.fuente === 'manual'
+  const mode = resultMode(result)
+  const badge = MODE_BADGE[mode]
 
   return (
     <section aria-labelledby="tax-hero-title" className="min-w-0 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
@@ -24,18 +102,25 @@ export function TaxHero({ result, status }) {
             Impuesto estimado {result.anio}
           </h2>
         </div>
-        <span
-          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-            status ? 'bg-slate-100 text-slate-600' : simulated ? 'bg-sky-50 text-sky-700' : 'bg-emerald-50 text-emerald-700'
-          }`}
-        >
-          {status || (simulated ? 'Simulación' : 'Con tus ingresos registrados')}
+        <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${status ? 'bg-slate-100 text-slate-600' : badge.className}`}>
+          {status || badge.label}
         </span>
       </div>
 
-      <p className="mt-5 break-words text-4xl font-extrabold tracking-tight text-slate-900 tabular-nums md:text-5xl">{soles(tax)}</p>
+      <p className="mt-5 break-words text-4xl font-extrabold tracking-tight text-slate-900 md:text-5xl">
+        <TaxAmount value={tax} />
+      </p>
       <p className="mt-2 text-sm text-slate-500">
-        Al año, sobre un ingreso bruto de <span className="font-semibold text-slate-700 tabular-nums">{soles(gross)}</span>
+        {mode === 'partial' ? (
+          <>
+            Con lo registrado hasta hoy: <TaxAmount value={gross} className="font-semibold text-slate-700" />. El año aún no termina.
+          </>
+        ) : (
+          <>
+            Al año, sobre un {mode === 'projected' ? 'ingreso anual proyectado' : 'ingreso bruto'} de{' '}
+            <TaxAmount value={gross} className="font-semibold text-slate-700" />
+          </>
+        )}
       </p>
 
       <dl className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -45,36 +130,32 @@ export function TaxHero({ result, status }) {
             Tasa efectiva
           </dt>
           <dd className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">{formatPercent(result.tasa_efectiva)}</dd>
-          <dd className="mt-1 text-xs text-slate-500">del ingreso bruto anual</dd>
+          <dd className="mt-1 text-xs text-slate-500">{mode === 'projected' ? 'del ingreso anual proyectado' : 'del ingreso bruto anual'}</dd>
         </div>
         <div className="min-w-0 rounded-2xl bg-slate-50 p-4">
           <dt className="flex items-center gap-2 text-sm font-medium text-slate-600">
             <CalendarClock className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
             Retención mensual aprox.
           </dt>
-          <dd className="mt-2 break-words text-2xl font-bold text-slate-900 tabular-nums">{soles(tax / 12)}</dd>
+          <dd className="mt-2 break-words text-2xl font-bold text-slate-900">
+            <TaxAmount value={tax / 12} />
+          </dd>
           <dd className="mt-1 text-xs text-slate-500">impuesto anual ÷ 12 meses</dd>
         </div>
       </dl>
 
-      {net <= 0 && (
-        <div className="mt-5 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" aria-hidden="true" />
-          <div className="min-w-0">
-            <p className="font-semibold">No pagarías Impuesto a la Renta en {result.anio}</p>
-            <p className="mt-1 leading-6">
-              {gross <= FIXED_DEDUCTION_UIT * uit ? (
-                <>
-                  Tu ingreso anual (<span className="tabular-nums">{soles(gross)}</span>) no supera las 7 UIT (
-                  <span className="tabular-nums">{soles(FIXED_DEDUCTION_UIT * uit)}</span>) que se deducen de toda renta de trabajo, así que
-                  no queda renta neta sobre la cual pagar.
-                </>
-              ) : (
-                <>Las deducciones cubren todo tu ingreso, así que la renta neta es S/ 0.00 y no hay impuesto.</>
-              )}
-            </p>
-          </div>
-        </div>
+      {net <= 0 ? (
+        <NoTaxNote mode={mode} year={result.anio} gross={gross} fixedLimit={FIXED_DEDUCTION_UIT * uit} />
+      ) : (
+        mode === 'partial' && (
+          <p className="mt-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+            <Hourglass className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
+            <span className="min-w-0">
+              <span className="font-semibold">Dato parcial.</span> Se calculó solo con lo que llevas registrado en {result.anio}; si sigues recibiendo
+              ingresos, el impuesto del año será mayor.
+            </span>
+          </p>
+        )
       )}
     </section>
   )
@@ -88,7 +169,7 @@ function StepRow({ operator, operatorLabel, label, detail, amount, total = false
       }`}
     >
       <dt className="flex min-w-0 items-baseline gap-2">
-        <span aria-hidden="true" className={`w-4 shrink-0 text-center text-base font-bold ${total ? 'text-slate-900' : 'text-slate-400'}`}>
+        <span aria-hidden="true" className={`w-4 shrink-0 text-center text-base font-bold ${total ? 'text-slate-900' : 'text-slate-500'}`}>
           {operator}
         </span>
         {operatorLabel && <span className="sr-only">{operatorLabel} </span>}
@@ -97,24 +178,47 @@ function StepRow({ operator, operatorLabel, label, detail, amount, total = false
           {detail && <span className="mt-0.5 block text-xs leading-5 text-slate-500">{detail}</span>}
         </span>
       </dt>
-      <dd className={`whitespace-nowrap text-right tabular-nums ${total ? 'text-base font-bold text-slate-900' : 'text-sm font-semibold text-slate-800'}`}>
-        {soles(amount)}
+      <dd className={`whitespace-nowrap text-right ${total ? 'text-base font-bold text-slate-900' : 'text-sm font-semibold text-slate-800'}`}>
+        <TaxAmount value={amount} />
       </dd>
     </div>
   )
 }
 
+const GROSS_LABEL = {
+  projected: 'Ingreso anual proyectado',
+  partial: 'Ingresos registrados hasta hoy',
+}
+
+function grossDetail(result, mode) {
+  if (mode === 'simulated') return 'Monto que ingresaste para simular'
+  if (mode === 'projected') {
+    const months = toNumber(result.meses_con_ingresos)
+    return months > 0
+      ? `Lo registrado en ${months} ${months === 1 ? 'mes' : 'meses'} con ingresos, llevado a 12 meses`
+      : 'Lo registrado hasta hoy, llevado a 12 meses'
+  }
+  if (mode === 'partial') return `Tus ingresos regulares de ${result.anio} hasta hoy (dato parcial)`
+  return `Tus ingresos regulares de ${result.anio}`
+}
+
 /** Paso a paso: ingreso bruto − 7 UIT − deducciones adicionales = renta neta → impuesto. */
 export function TaxBreakdown({ result, requestedDeductions }) {
+  const hidden = useAmountsHidden()
   const uit = toNumber(result.uit)
   const gross = toNumber(result.ingreso_bruto)
+  const mode = resultMode(result)
   const { fixed, fixedLimit, fixedCapped, additional, additionalLimit } = splitDeductions(result)
   const requested = toNumber(requestedDeductions)
+  const limitText = hidden ? '' : ` (${soles(additionalLimit)})`
 
-  let additionalDetail = `Opcional · máximo 3 UIT (${soles(additionalLimit)})`
+  let additionalDetail = `Opcional · máximo 3 UIT${limitText}`
   if (requested > 0 && additional <= 0 && fixedCapped) additionalDetail = 'No se aplican: la deducción fija ya cubre todo tu ingreso'
-  else if (requested > additionalLimit) additionalDetail = `Se aplicó el tope de 3 UIT (${soles(additionalLimit)})`
+  else if (requested > additionalLimit) additionalDetail = `Se aplicó el tope de 3 UIT${limitText}`
   else if (requested > 0 && additional < requested) additionalDetail = 'Limitadas a lo que queda de tu ingreso'
+
+  let fixedDetail = hidden ? `${FIXED_DEDUCTION_UIT} × UIT de ${result.anio}` : `${FIXED_DEDUCTION_UIT} × ${soles(uit)}`
+  if (fixedCapped) fixedDetail = hidden ? 'Limitada a tu ingreso' : `Limitada a tu ingreso (7 UIT = ${soles(fixedLimit)})`
 
   return (
     <section aria-labelledby="tax-steps-title" className="min-w-0 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
@@ -124,30 +228,17 @@ export function TaxBreakdown({ result, requestedDeductions }) {
       <p className="mt-1 text-sm text-slate-500">Primero se restan las deducciones; el impuesto se aplica solo a la renta neta.</p>
 
       <dl className="mt-4">
-        <StepRow
-          operator=" "
-          label="Ingreso bruto anual"
-          detail={result.fuente === 'manual' ? 'Monto que ingresaste para simular' : `Tus ingresos regulares de ${result.anio}`}
-          amount={gross}
-        />
-        <StepRow
-          operator="−"
-          operatorLabel="Menos"
-          label={`Deducción fija (${FIXED_DEDUCTION_UIT} UIT)`}
-          detail={
-            fixedCapped
-              ? `Limitada a tu ingreso (7 UIT = ${soles(fixedLimit)})`
-              : `${FIXED_DEDUCTION_UIT} × ${soles(uit)}`
-          }
-          amount={fixed}
-        />
+        <StepRow operator=" " label={GROSS_LABEL[mode] ?? 'Ingreso bruto anual'} detail={grossDetail(result, mode)} amount={gross} />
+        <StepRow operator="−" operatorLabel="Menos" label={`Deducción fija (${FIXED_DEDUCTION_UIT} UIT)`} detail={fixedDetail} amount={fixed} />
         <StepRow operator="−" operatorLabel="Menos" label="Deducciones adicionales" detail={additionalDetail} amount={additional} />
         <StepRow operator="=" operatorLabel="Igual a" label="Renta neta imponible" amount={result.renta_neta} total />
       </dl>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
         <span className="text-sm font-medium text-emerald-800">Impuesto: suma de cada tramo de la escala</span>
-        <span className="whitespace-nowrap text-lg font-bold text-emerald-700 tabular-nums">{soles(result.impuesto)}</span>
+        <span className="whitespace-nowrap text-lg font-bold text-emerald-700">
+          <TaxAmount value={result.impuesto} />
+        </span>
       </div>
     </section>
   )

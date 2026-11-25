@@ -9,11 +9,11 @@ const CONTENT = {
   terminos: {
     title: 'Términos de Servicio',
     intro:
-      'Estos términos describen las condiciones de uso de Finova, una aplicación web para organizar tus finanzas personales. El documento es preliminar y se completará antes de un lanzamiento público.',
+      'Finova es un proyecto académico: una aplicación web para organizar tus finanzas personales, desarrollada con fines educativos. Estos términos describen cómo puedes usarla.',
     sections: [
       {
         heading: 'Qué ofrece Finova',
-        text: 'Finova te permite registrar cuentas y billeteras, anotar ingresos, gastos y transferencias, definir presupuestos y metas, recibir alertas sobre tu actividad y ver un resumen de tu situación financiera. También puedes exportar tus movimientos en formato CSV desde Configuración.',
+        text: 'Finova te permite registrar cuentas y billeteras, anotar ingresos, gastos y transferencias, definir presupuestos mensuales por categoría, recibir alertas cuando un presupuesto se acerca a su límite o se detecta un gasto inusual, estimar tu Impuesto a la Renta y ver un resumen de tu situación financiera. También puedes exportar tus movimientos en formato CSV desde Configuración.',
       },
       {
         heading: 'Uso de la cuenta',
@@ -29,18 +29,18 @@ const CONTENT = {
       },
       {
         heading: 'Contacto',
-        text: 'Para consultas sobre estos términos, utiliza los canales oficiales de soporte de Finova cuando estén publicados.',
+        text: 'Finova es un proyecto académico y no ofrece soporte comercial. Para consultas sobre estos términos, comunícate con el equipo del proyecto.',
       },
     ],
   },
   privacidad: {
     title: 'Política de Privacidad',
     intro:
-      'Esta política describe qué datos trata Finova para crear y proteger tu cuenta y para mostrarte tu información financiera. Es un documento preliminar sujeto a revisión legal.',
+      'Finova es un proyecto académico. Esta política describe qué datos trata la aplicación para crear y proteger tu cuenta y para mostrarte tu información financiera.',
     sections: [
       {
         heading: 'Datos que recopilamos',
-        text: 'De tu cuenta: nombre completo, correo electrónico, moneda principal, estado de verificación del correo y fechas de creación y actualización. De tu uso: las cuentas, movimientos, presupuestos, metas y alertas que registras en la aplicación.',
+        text: 'De tu cuenta: nombre completo, correo electrónico, moneda principal, estado de verificación del correo y fechas de creación y actualización. De tu uso: las cuentas, movimientos y presupuestos que registras en la aplicación y las alertas que se generan a partir de ellos.',
       },
       {
         heading: 'Finalidad',
@@ -56,7 +56,7 @@ const CONTENT = {
       },
       {
         heading: 'Tus derechos',
-        text: 'Puedes corregir tu nombre y tu moneda principal desde Configuración y descargar tus movimientos en CSV cuando quieras. Para solicitar la eliminación de tu cuenta o de tus datos, utiliza los canales oficiales de Finova; el procedimiento formal se habilitará antes de un lanzamiento público.',
+        text: 'Puedes corregir tu nombre y tu moneda principal desde Configuración y descargar tus movimientos en CSV cuando quieras. Para solicitar la eliminación de tu cuenta o de tus datos, comunícate con el equipo del proyecto.',
       },
     ],
   },
@@ -87,7 +87,7 @@ export default function LegalPage({ kind = 'terminos' }) {
           <p className="mt-2 text-[12.5px] leading-relaxed text-[#64748B]">{content.intro}</p>
 
           <Alert tone="info" className="mt-5">
-            Versión preliminar. Este texto no constituye todavía un documento legal definitivo.
+            Proyecto académico. Este texto explica cómo funciona Finova; no es un documento legal vinculante.
           </Alert>
 
           <div className="mt-6 space-y-5">
@@ -99,8 +99,8 @@ export default function LegalPage({ kind = 'terminos' }) {
             ))}
           </div>
 
-          <p className="mt-7 border-t border-[#E8EFEB] pt-4 text-[10.5px] text-[#8A9A94]">
-            © 2026 Finova Technologies S.A.C. Todos los derechos reservados.
+          <p className="mt-7 border-t border-[#E8EFEB] pt-4 text-[10.5px] text-[#64748B]">
+            Finova es un proyecto académico desarrollado con fines educativos: no es una empresa ni una entidad financiera.
           </p>
         </AuthCard>
       </main>

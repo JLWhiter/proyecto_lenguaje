@@ -6,14 +6,20 @@ import { usePeriod } from '../../context/PeriodContext'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { useMoney } from '../../hooks/useMoney'
 import { formatPercent, toNumber } from '../../lib/format'
+import TaxAmount, { HIDDEN_AMOUNT, useAmountsHidden } from './TaxAmount'
 import TaxBrackets from './TaxBrackets'
 import TaxControls from './TaxControls'
 import { TaxBreakdown, TaxHero } from './TaxSummary'
-import { UIT_BY_YEAR, soles } from './taxRules'
+import { TAX_CURRENCY, UIT_BY_YEAR, soles, yearProgress } from './taxRules'
 import { useIncomeTax } from './useIncomeTax'
 import { useTaxParams } from './useTaxParams'
 
 const DEFAULT_NOTE = 'Estimación de rentas de quinta categoría. No incluye retenciones, créditos ni otras rentas.'
+
+/** Oculta montos dentro de un texto de la API ("S/ 1,234.50" → "••••") cuando el usuario ocultó los montos. */
+function maskAmounts(text) {
+  return String(text ?? '').replace(/-?(?:S\/|US\$|\$|€)\s?\d[\d,]*(?:\.\d+)?/g, HIDDEN_AMOUNT)
+}
 
 function TaxSkeleton() {
   return (
@@ -57,7 +63,7 @@ function TaxNotes({ note, year, uit, currency }) {
             <Landmark className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
             {uit ? (
               <span>
-                UIT {year}: <span className="tabular-nums">{soles(uit)}</span>
+                UIT {year}: <TaxAmount value={uit} />
               </span>
             ) : (
               <span>UIT</span>
@@ -75,7 +81,7 @@ function TaxNotes({ note, year, uit, currency }) {
           </dt>
           <dd className="mt-1.5 text-sm leading-6 text-slate-600">
             El impuesto peruano se calcula en soles.
-            {currency && currency !== 'PEN'
+            {currency && currency !== TAX_CURRENCY
               ? ` Aunque tu moneda principal es ${currency}, en esta pantalla todos los montos están en S/.`
               : ' Todos los montos de esta pantalla están en S/.'}
           </dd>
@@ -85,11 +91,25 @@ function TaxNotes({ note, year, uit, currency }) {
   )
 }
 
+/** Recuerda la última proyección del año que dio la API (por si una respuesta con `?proyectar=0` no la trae). */
+function useKnownProjection(result) {
+  const [known, setKnown] = useState(null)
+  const value = result?.ingreso_proyectado
+  if (result && value !== null && value !== undefined) {
+    const amount = toNumber(value)
+    if (known?.year !== result.anio || known.amount !== amount) setKnown({ year: result.anio, amount })
+  }
+  return result && known?.year === result.anio ? known.amount : null
+}
+
 export default function TaxesPage() {
   useDocumentTitle('Impuestos')
-  const params = useTaxParams()
-  const tax = useIncomeTax(params.query)
   const { currency } = useMoney()
+  // Con USD/EUR los movimientos no están en soles: solo se puede simular un ingreso en soles.
+  const foreignCurrency = currency !== TAX_CURRENCY
+  const params = useTaxParams({ forceSimulate: foreignCurrency })
+  const tax = useIncomeTax(params.query)
+  const hidden = useAmountsHidden()
   const { search } = usePeriod()
   const incomeInputRef = useRef(null)
   const [focusIncome, setFocusIncome] = useState(false)
@@ -97,7 +117,13 @@ export default function TaxesPage() {
   const data = tax.status === 'ready' ? tax.data : undefined
   const sameYear = data && data.anio === params.year
   const uit = (sameYear ? toNumber(data.uit) : null) || UIT_BY_YEAR[params.year] || null
-  const registeredIncome = sameYear && data.fuente === 'movimientos' ? toNumber(data.ingreso_bruto) : null
+  const registeredData = sameYear && data.fuente === 'movimientos' ? data : null
+  const knownProjection = useKnownProjection(registeredData)
+  const progress = registeredData && params.projectable ? yearProgress(registeredData, knownProjection) : null
+
+  // Con "Mis ingresos registrados": la proyección o lo registrado según la opción elegida (al instante, sin esperar la API).
+  let registeredIncome = registeredData ? toNumber(registeredData.ingreso_bruto) : null
+  if (progress) registeredIncome = progress.projected !== null && params.project ? progress.projected : progress.recorded
 
   // 400 de la API → mensaje bajo el campo correspondiente.
   const apiErrors = tax.status === 'error' && tax.error?.status === 400 ? tax.error.fieldErrors ?? {} : {}
@@ -117,6 +143,7 @@ export default function TaxesPage() {
   }, [focusIncome, params.simulate])
 
   function handleSourceChange(simulate) {
+    if (!simulate && params.simulateLocked) return
     const registered = data?.fuente === 'movimientos' ? toNumber(data.ingreso_bruto) : 0
     params.setSimulate(simulate, { prefill: simulate && registered > 0 ? registered : undefined })
   }
@@ -145,7 +172,7 @@ export default function TaxesPage() {
       <EmptyState
         icon={Calculator}
         title="Ingresa un ingreso anual para simular"
-        description="Escribe cuánto ganarías en el año, antes de impuestos, y verás el impuesto estimado al instante."
+        description="Escribe cuánto ganarías en el año, en soles y antes de impuestos, y verás el impuesto estimado al instante."
       />
     )
   } else if (data.fuente === 'movimientos' && toNumber(data.ingreso_bruto) <= 0) {
@@ -189,7 +216,12 @@ export default function TaxesPage() {
     )
   }
 
-  const announcement = data && !busy ? `Impuesto estimado ${soles(data.impuesto)}, tasa efectiva ${formatPercent(data.tasa_efectiva)}.` : ''
+  let announcement = ''
+  if (data && !busy) {
+    announcement = hidden
+      ? `Impuesto estimado actualizado (montos ocultos), tasa efectiva ${formatPercent(data.tasa_efectiva)}.`
+      : `Impuesto estimado ${soles(data.impuesto)}, tasa efectiva ${formatPercent(data.tasa_efectiva)}.`
+  }
 
   return (
     <div className="space-y-5">
@@ -205,10 +237,24 @@ export default function TaxesPage() {
         </span>
       </div>
 
+      {foreignCurrency && (
+        <div role="note" className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+          <Info className="mt-1 h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
+          <p className="min-w-0">
+            <span className="font-semibold">Tus movimientos están en {currency}.</span> El Impuesto a la Renta peruano se calcula en soles: usa «Simular
+            un ingreso» con tu ingreso anual en soles.
+          </p>
+        </div>
+      )}
+
       <TaxControls
         params={params}
         uit={uit}
         registeredIncome={registeredIncome}
+        progress={progress}
+        lockedReason={
+          foreignCurrency ? `«Mis ingresos registrados» no está disponible: tus movimientos están en ${currency}, no en soles.` : null
+        }
         errors={errors}
         incomeInputRef={incomeInputRef}
         onSourceChange={handleSourceChange}
@@ -222,7 +268,7 @@ export default function TaxesPage() {
         {announcement}
       </p>
 
-      <TaxNotes note={data?.nota || DEFAULT_NOTE} year={params.year} uit={uit} currency={currency} />
+      <TaxNotes note={hidden ? maskAmounts(data?.nota || DEFAULT_NOTE) : data?.nota || DEFAULT_NOTE} year={params.year} uit={uit} currency={currency} />
     </div>
   )
 }

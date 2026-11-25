@@ -22,7 +22,7 @@ export function Field({ id, label, optional = false, error, hint, extra = null, 
     <div>
       <label htmlFor={id} className="block text-sm font-semibold text-slate-700">
         {label}
-        {optional && <span className="font-normal text-slate-400"> (opcional)</span>}
+        {optional && <span className="font-normal text-slate-500"> (opcional)</span>}
       </label>
       {children(describedBy)}
       {error && (
