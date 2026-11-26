@@ -4,8 +4,9 @@
 
 Genera 3 cuentas y 6 meses de movimientos típicos de un trabajador en Lima
 (sueldo, alquiler, comida, transporte, servicios, transferencias entre
-cuentas y un depósito) hasta hoy, más presupuestos para el mes actual, y al
-final evalúa el motor de alertas para que el usuario tenga alertas reales.
+cuentas y un depósito) hasta hoy, más presupuestos para el mes actual y dos
+metas de ahorro con aportes de los últimos meses (una al día y otra atrasada),
+y al final evalúa el motor de alertas para que el usuario tenga alertas reales.
 Todo pasa por los mismos métodos de dominio que usa la API
 (``FinanceAccount.open``, ``deposit``, ``withdraw``, ``transfer_to``), así los
 saldos siempre son la suma de los movimientos. Los montos variables salen de
@@ -23,10 +24,11 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
-from core.alert_service import refresh_alerts
+from core.alert_service import evaluate_goal_alerts, refresh_alerts
 from core.exceptions import SaldoInsuficienteError
 from core.models import AlertEvaluation, FinanceAccount, FinanceAlert, FinanceBudget, FinanceTransaction
-from core.periods import current_period, days_in_period, parse_period, period_label, shift_month
+from core.periods import current_period, days_in_period, first_day, local_today, parse_period, period_label, shift_month
+from goals.models import ContributionKind, SavingsGoal
 
 DEFAULT_EMAIL = "demo@finova.local"
 DEFAULT_PASSWORD = "FinovaDemo#2026"
@@ -84,6 +86,44 @@ BUDGETS = (
     ("Servicios", "Luz, agua, internet y celular", "300.00", "home"),
     ("Entretenimiento", "Streaming, cine y salidas", "120.00", "gamepad"),
     ("Salud", "Farmacia y consultas", "150.00", "health"),
+)
+
+
+# Metas de ahorro. Solo registran lo que el usuario separa: no mueven dinero entre cuentas.
+# "created": (meses antes del actual, día); "target_months": la fecha objetivo es el último día
+# de ese mes contado desde el actual; "movements": (meses desde la creación, día, tipo, monto, nota).
+APORTE, RETIRO = ContributionKind.DEPOSIT, ContributionKind.WITHDRAWAL
+GOALS = (
+    {
+        "name": "Laptop nueva",
+        "description": "Para trabajar y estudiar desde casa",
+        "icon": "laptop",
+        "target_amount": "3500.00",
+        "created": (4, 3),
+        "target_months": 4,
+        "movements": (
+            (0, 3, APORTE, "600.00", "Monto inicial"),
+            (1, 2, APORTE, "380.00", "Separado del sueldo"),
+            (2, 2, APORTE, "380.00", "Separado del sueldo"),
+            (3, 2, APORTE, "380.00", "Separado del sueldo"),
+            (4, 2, APORTE, "380.00", "Separado del sueldo"),
+        ),
+    },
+    {
+        "name": "Viaje a Cusco",
+        "description": "Pasajes y hospedaje para las vacaciones",
+        "icon": "plane",
+        "target_amount": "2000.00",
+        "created": (5, 10),
+        "target_months": 2,
+        "movements": (
+            (0, 10, APORTE, "300.00", "Monto inicial"),
+            (1, 5, APORTE, "150.00", ""),
+            (2, 5, APORTE, "150.00", ""),
+            (3, 18, RETIRO, "100.00", "Imprevisto: reparación del celular"),
+            (4, 5, APORTE, "120.00", ""),
+        ),
+    },
 )
 
 
@@ -154,12 +194,36 @@ def apply(item, accounts):
         pay(item, account, accounts[MAIN_ACCOUNT])
 
 
+def create_goal(user, current, spec):
+    """Crea una meta con fecha de creación en el pasado y registra sus aportes y retiros hasta hoy."""
+    months_ago, day = spec["created"]
+    created_period = shift_month(current, -months_ago)
+    target_period = shift_month(current, spec["target_months"])
+    goal = SavingsGoal.objects.create(
+        owner=user,
+        name=spec["name"],
+        description=spec["description"],
+        icon=spec["icon"],
+        target_amount=Decimal(spec["target_amount"]),
+        target_date=first_day(target_period).replace(day=days_in_period(target_period)),
+        created_at=at(created_period, day, 9),
+    )
+    today = local_today()
+    for offset, movement_day, kind, amount, note in spec["movements"]:
+        when = at(shift_month(created_period, offset), movement_day, 9).date()
+        if goal.created_on <= when <= today:
+            register = goal.contribute if kind == APORTE else goal.withdraw
+            register(Decimal(amount), occurred_at=when, note=note)
+    return goal
+
+
 def has_finance_data(user):
-    return any(model.objects.filter(owner=user).exists() for model in (FinanceAccount, FinanceTransaction, FinanceBudget))
+    owned = (FinanceAccount, FinanceTransaction, FinanceBudget, SavingsGoal)
+    return any(model.objects.filter(owner=user).exists() for model in owned)
 
 
 def clear_finance_data(user):
-    for model in (FinanceAlert, AlertEvaluation, FinanceTransaction, FinanceBudget, FinanceAccount):
+    for model in (FinanceAlert, AlertEvaluation, FinanceTransaction, FinanceBudget, FinanceAccount, SavingsGoal):
         model.objects.filter(owner=user).delete()
 
 
@@ -184,14 +248,17 @@ class Command(BaseCommand):
             FinanceBudget(owner=user, month=months[-1], category=category, description=description, limit_amount=Decimal(limit), icon=icon)
             for category, description, limit, icon in BUDGETS
         )
+        for spec in GOALS:
+            create_goal(user, months[-1], spec)
         refresh_alerts(user, months)
+        evaluate_goal_alerts(user)
         shown_password = (password or DEFAULT_PASSWORD) if created else (password or "(sin cambios)")
         movements = FinanceTransaction.objects.filter(owner=user).count()
         alerts = FinanceAlert.objects.filter(owner=user).count()
         self.stdout.write(self.style.SUCCESS(
             f"Usuario demo listo: {email} / contraseña: {shown_password}\n"
             f"{movements} movimientos en {len(accounts)} cuentas desde {period_label(months[0])}, "
-            f"{len(BUDGETS)} presupuestos para {period_label(months[-1])} y {alerts} alertas."
+            f"{len(BUDGETS)} presupuestos para {period_label(months[-1])}, {len(GOALS)} metas de ahorro y {alerts} alertas."
         ))
 
     def demo_user(self, email, password, reset):

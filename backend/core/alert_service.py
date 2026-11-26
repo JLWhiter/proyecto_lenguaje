@@ -7,6 +7,9 @@ Cuándo se evalúa (de forma explícita, sin señales):
   que cambia movimientos o presupuestos, con los meses afectados.
 - ``ensure_alerts``: al abrir el dashboard o las alertas, solo si el mes no se
   evaluó hoy (si ya está al día cuesta una sola consulta).
+- ``evaluate_goal_alerts``: las vistas de metas lo llaman después de cada cambio
+  en una meta o en sus aportes; ``ensure_alerts`` lo repite una vez al día
+  (el progreso esperado de una meta avanza aunque no cambie nada).
 
 Solo se generan alertas para el mes en curso y el anterior (``alerts.window_periods``);
 las alertas del motor de meses más antiguos se eliminan. Evaluar un mes usa un
@@ -22,7 +25,21 @@ from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
 from . import alerts
-from .alerts import DASHBOARD_TYPES, ENGINE_RULES, AlertLevel, AlertRule, BudgetUsage, Expense, MonthFlows
+from goals.models import SavingsGoal
+
+from .alerts import (
+    DASHBOARD_TYPES,
+    ENGINE_RULES,
+    GOAL_PERIOD,
+    GOAL_RULES,
+    GOALS_SCOPE,
+    AlertLevel,
+    AlertRule,
+    BudgetUsage,
+    Expense,
+    GoalProgress,
+    MonthFlows,
+)
 from .analytics import SUMMARY_STATUSES
 from .categories import category_key
 from .models import AlertEvaluation, FinanceAlert, FinanceBudget, FinanceTransaction, active_alert
@@ -71,6 +88,23 @@ def month_flows(user, period):
     return MonthFlows(period, totals["income"] or ZERO, totals["expenses"] or ZERO)
 
 
+def goal_progress(goal, today):
+    """Indicadores de una meta para las reglas puras de ``core.alerts``."""
+    snapshot = goal.snapshot(today)
+    return GoalProgress(
+        id=goal.id,
+        name=goal.name,
+        target=goal.target_amount,
+        saved=snapshot.saved,
+        progress=snapshot.progress,
+        expected=snapshot.expected,
+        required_monthly=snapshot.required_monthly,
+        target_date=goal.target_date,
+        behind=snapshot.is_behind,
+        reached=snapshot.is_reached,
+    )
+
+
 # --- Evaluación y sincronización -------------------------------------------------
 
 def apply_plan(user, plan, now):
@@ -113,10 +147,34 @@ def evaluate_alerts(user, period=None, *, today=None, now=None):
         apply_plan(user, plan, now)
         expired = FinanceAlert.objects.filter(owner=user, rule__in=ENGINE_RULES, period__lt=alerts.window_periods(today)[0])
         expired.exclude(period="").delete()
-        AlertEvaluation.objects.bulk_create(
-            [AlertEvaluation(owner=user, period=period, evaluated_at=now, currency=currency)],
-            update_conflicts=True, unique_fields=["owner", "period"], update_fields=["evaluated_at", "currency"],
-        )
+        mark_evaluated(user, period, now, currency)
+    return plan
+
+
+def mark_evaluated(user, scope, now, currency):
+    """Registra cuándo (y con qué moneda) se evaluó ``scope``: un mes 'AAAA-MM' o ``GOALS_SCOPE``."""
+    AlertEvaluation.objects.bulk_create(
+        [AlertEvaluation(owner=user, period=scope, evaluated_at=now, currency=currency)],
+        update_conflicts=True, unique_fields=["owner", "period"], update_fields=["evaluated_at", "currency"],
+    )
+
+
+def evaluate_goal_alerts(user, *, today=None, now=None):
+    """Evalúa las reglas de metas para las metas activas del usuario y sincroniza sus alertas.
+
+    Crea las alertas nuevas, actualiza las existentes y elimina las de metas que
+    ya no cumplen la condición (o que se archivaron o eliminaron). Devuelve el ``SyncPlan``.
+    """
+    today = today or local_today()
+    now = now or timezone.now()
+    currency = getattr(user, "currency", "PEN")
+    with transaction.atomic():
+        goals = SavingsGoal.objects.filter(owner=user).active().with_contributions()
+        candidates = alerts.goal_alerts([goal_progress(goal, today) for goal in goals], currency)
+        stored = FinanceAlert.objects.filter(owner=user, rule__in=GOAL_RULES)
+        plan = alerts.reconcile(list(stored), candidates, GOAL_PERIOD, now)
+        apply_plan(user, plan, now)
+        mark_evaluated(user, GOALS_SCOPE, now, currency)
     return plan
 
 
@@ -134,25 +192,20 @@ def ensure_alerts(user, period=None, *, today=None, now=None):
     """
     today = today or local_today()
     periods = alerts.lazy_periods(period, today)
-    if not periods:
-        return []
     currency = getattr(user, "currency", "PEN")
-    marks = {
-        period: (evaluated_at, evaluated_currency)
-        for period, evaluated_at, evaluated_currency in AlertEvaluation.objects.filter(
-            owner=user, period__in=periods
-        ).values_list("period", "evaluated_at", "currency")
-    }
-    stale = [
-        period
-        for period in periods
-        if period not in marks
-        or marks[period][1] != currency
-        or alerts.needs_evaluation(period, timezone.localtime(marks[period][0]).date(), today)
-    ]
+    marks = evaluation_marks(user, [*periods, GOALS_SCOPE], currency)
+    stale = [period for period in periods if period not in marks or alerts.needs_evaluation(period, marks[period], today)]
     for period in stale:
         evaluate_alerts(user, period, today=today, now=now)
+    if alerts.needs_goal_evaluation(marks.get(GOALS_SCOPE), today):
+        evaluate_goal_alerts(user, today=today, now=now)
     return stale
+
+
+def evaluation_marks(user, scopes, currency):
+    """{scope: día local de su última evaluación} en una consulta; omite los evaluados con otra moneda."""
+    rows = AlertEvaluation.objects.filter(owner=user, period__in=scopes).values_list("period", "evaluated_at", "currency")
+    return {scope: timezone.localtime(moment).date() for scope, moment, evaluated_currency in rows if evaluated_currency == currency}
 
 
 # --- Respuestas de la API ---------------------------------------------------------
@@ -223,7 +276,8 @@ def alerts_payload(user, estado=ACTIVE, tipo="", now=None):
     def shown(rule):
         return by_rule.get(rule, {}).get(scope, 0)
 
-    rules = [*ENGINE_RULES, *([AlertRule.OTHER] if shown(AlertRule.OTHER) else [])]
+    # Las reglas de metas y "General" solo aparecen como filtro si tienen alertas.
+    rules = [*ENGINE_RULES, *(rule for rule in (*GOAL_RULES, AlertRule.OTHER) if shown(rule))]
     condition = rule_filter(tipo)
     rows = FinanceAlert.objects.filter(owner=user)
     if estado == ACTIVE:

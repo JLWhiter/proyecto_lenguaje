@@ -14,6 +14,7 @@ import VerifyEmailPage from './pages/VerifyEmailPage'
 const DashboardPage = lazy(() => import('./features/dashboard/DashboardPage'))
 const TransactionsPage = lazy(() => import('./features/transactions/TransactionsPage'))
 const BudgetsPage = lazy(() => import('./features/budgets/BudgetsPage'))
+const GoalsPage = lazy(() => import('./features/goals/GoalsPage'))
 const AccountsPage = lazy(() => import('./features/accounts/AccountsPage'))
 const AlertsPage = lazy(() => import('./features/alerts/AlertsPage'))
 const TaxesPage = lazy(() => import('./features/taxes/TaxesPage'))
@@ -43,6 +44,7 @@ export default function App() {
           <Route index element={<DashboardPage />} />
           <Route path="movimientos" element={<TransactionsPage />} />
           <Route path="presupuestos" element={<BudgetsPage />} />
+          <Route path="metas" element={<GoalsPage />} />
           <Route path="cuentas" element={<AccountsPage />} />
           <Route path="alertas" element={<AlertsPage />} />
           <Route path="impuestos" element={<TaxesPage />} />

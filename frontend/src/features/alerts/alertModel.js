@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, Bell, CheckCircle2, Gauge, Info, OctagonAlert, Scale, Target } from 'lucide-react'
+import { Activity, AlertTriangle, Bell, CheckCircle2, Flag, Gauge, Info, OctagonAlert, Scale, Target, Trophy } from 'lucide-react'
 import { parseCountLabel } from '../../components/ui'
 import { formatDate, formatTime } from '../../lib/format'
 import { APP_TIME_ZONE, currentMonth, isValidMonth, monthLabel, shiftMonth } from '../../lib/period'
@@ -54,6 +54,8 @@ export const ALERT_RULES = {
   budget_projection: { label: 'Ritmo de gasto', Icon: Gauge },
   atypical_expense: { label: 'Gasto inusual', Icon: Activity },
   negative_month: { label: 'Balance mensual', Icon: Scale },
+  goal_behind: { label: 'Meta atrasada', Icon: Flag },
+  goal_reached: { label: 'Meta alcanzada', Icon: Trophy },
   other: { label: 'General', Icon: Bell },
 }
 
@@ -122,6 +124,22 @@ function toTarget(pathname, params) {
   return { pathname, search: search ? `?${search}` : '' }
 }
 
+/** Presupuestos del mes con `presupuesto=<id>` (+ `accion=editar` si la acción es «Ajustar presupuesto»). */
+function budgetTarget(action, params) {
+  if (hasValue(action.id)) {
+    params.set('presupuesto', String(action.id))
+    if (normalize(action.label) === EDIT_BUDGET_LABEL) params.set('accion', 'editar')
+  }
+  return toTarget('/app/presupuestos', params)
+}
+
+/** Metas de ahorro con `meta=<id>` (la pantalla resalta esa meta). Las metas no dependen del mes. */
+function goalTarget(action) {
+  const params = new URLSearchParams()
+  if (hasValue(action.id)) params.set('meta', String(action.id))
+  return toTarget('/app/metas', params)
+}
+
 /**
  * Destino de la acción de una alerta. Única fuente para el Centro de Alertas (`accion`) y el Resumen
  * (`accion_detalle`). El mes es el de la acción o, si falta, el primero válido de `months`.
@@ -129,21 +147,17 @@ function toTarget(pathname, params) {
  * - transaction (con id) → /app/movimientos?mes=<mes>&categoria=<categoria>&tipo=GASTO&movimiento=<id>
  *   (Movimientos resalta ese movimiento; sin `categoria` se omite ese filtro)
  * - transactions → /app/movimientos?mes=<mes>
+ * - goal → /app/metas?meta=<id>
  * Devuelve `null` si la acción no es navegable.
  */
 export function alertActionTarget(action, ...months) {
   if (!action || typeof action !== 'object') return null
+  if (action.type === 'goal') return goalTarget(action)
   const month = [action.mes, ...months].find(isValidMonth)
   const params = new URLSearchParams()
   if (month) params.set('mes', month)
 
-  if (action.type === 'budget') {
-    if (hasValue(action.id)) {
-      params.set('presupuesto', String(action.id))
-      if (normalize(action.label) === EDIT_BUDGET_LABEL) params.set('accion', 'editar')
-    }
-    return toTarget('/app/presupuestos', params)
-  }
+  if (action.type === 'budget') return budgetTarget(action, params)
   if (action.type === 'transaction' && hasValue(action.id)) {
     if (hasValue(action.categoria)) params.set('categoria', String(action.categoria).trim())
     params.set('tipo', 'GASTO')

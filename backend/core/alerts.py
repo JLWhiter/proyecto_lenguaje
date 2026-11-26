@@ -19,6 +19,11 @@ Reglas y umbrales:
   anteriores, con al menos 5 muestras → info (warning si supera media + 3σ).
 - Mes en negativo (``negative_month``): gastos > ingresos (REGULAR + DEPOSIT)
   del mes, desde el día 21 del mes en curso o en un mes cerrado → warning.
+- Metas de ahorro (no dependen de un mes: ``period`` vacío), una alerta por meta
+  activa: ``goal_behind`` (warning) si la meta está "Atrasada" — progreso más de
+  10 puntos por debajo del esperado (lineal) y con al menos 30 días — y
+  ``goal_reached`` (success) cuando lo ahorrado llega al objetivo. Los cálculos
+  los hace ``goals.planning``; aquí solo se redactan las alertas.
 """
 
 from dataclasses import asdict, dataclass, field
@@ -52,6 +57,8 @@ class AlertRule(TextChoices):
     BUDGET_PROJECTION = "budget_projection", "Ritmo de gasto"
     ATYPICAL_EXPENSE = "atypical_expense", "Gasto inusual"
     NEGATIVE_MONTH = "negative_month", "Balance mensual"
+    GOAL_BEHIND = "goal_behind", "Meta atrasada"
+    GOAL_REACHED = "goal_reached", "Meta alcanzada"
     OTHER = "other", "General"
 
 
@@ -63,6 +70,12 @@ class AlertLevel(TextChoices):
 
 
 ENGINE_RULES = (AlertRule.BUDGET_THRESHOLD, AlertRule.BUDGET_PROJECTION, AlertRule.ATYPICAL_EXPENSE, AlertRule.NEGATIVE_MONTH)
+GOAL_RULES = (AlertRule.GOAL_BEHIND, AlertRule.GOAL_REACHED)
+# Las alertas de metas no pertenecen a un mes. Su evaluación perezosa se registra en
+# ``AlertEvaluation`` con este valor en lugar de un período 'AAAA-MM'.
+GOAL_PERIOD = ""
+GOALS_SCOPE = "metas"
+GOAL_ACTION_LABEL = "Ver meta"
 SEVERITY = {AlertLevel.SUCCESS: 0, AlertLevel.INFO: 1, AlertLevel.WARNING: 2, AlertLevel.DANGER: 3}
 EXCEEDED_SEVERITY = 4
 DASHBOARD_TYPES = {AlertLevel.DANGER: "danger", AlertLevel.WARNING: "warning", AlertLevel.INFO: "info", AlertLevel.SUCCESS: "info"}
@@ -103,6 +116,22 @@ class MonthFlows:
     month: str
     income: Decimal
     expenses: Decimal
+
+
+@dataclass(frozen=True)
+class GoalProgress:
+    """Indicadores de una meta de ahorro activa (calculados por ``goals.planning``)."""
+
+    id: int
+    name: str
+    target: Decimal
+    saved: Decimal
+    progress: float
+    expected: float
+    required_monthly: Decimal
+    target_date: date
+    behind: bool
+    reached: bool
 
 
 @dataclass(frozen=True)
@@ -343,6 +372,71 @@ def negative_month_alerts(flows, today, currency="PEN"):
             action={"type": "transactions", "id": None, "mes": flows.month},
         )
     ]
+
+
+def long_date(day):
+    """date(2027, 3, 31) -> '31 Mar 2027'."""
+    return f"{short_date(day)} {day.year}"
+
+
+def goal_action(goal):
+    """Enlace «Ver meta». Sin ``percentage``: la interfaz lo dibuja como uso de presupuesto y el
+    progreso de la meta ya va en el texto."""
+    return {"action_label": GOAL_ACTION_LABEL, "action": {"type": "goal", "id": goal.id}}
+
+
+def goal_behind_alert(goal, currency="PEN"):
+    fmt = partial(money, currency=currency)
+    return AlertCandidate(
+        key=f"{AlertRule.GOAL_BEHIND.value}:{goal.id}",
+        rule=AlertRule.GOAL_BEHIND,
+        level=AlertLevel.WARNING,
+        severity=SEVERITY[AlertLevel.WARNING],
+        period=GOAL_PERIOD,
+        title=f"Tu meta {goal.name} va atrasada",
+        description=(
+            f"Llevas {fmt(goal.saved)} de {fmt(goal.target)} ({percent_text(goal.progress)}%) y a esta altura "
+            f"deberías llevar {percent_text(goal.expected)}%. Ahorra {fmt(goal.required_monthly)} al mes "
+            f"para llegar al {long_date(goal.target_date)}."
+        ),
+        **goal_action(goal),
+    )
+
+
+def goal_reached_alert(goal, currency="PEN"):
+    fmt = partial(money, currency=currency)
+    return AlertCandidate(
+        key=f"{AlertRule.GOAL_REACHED.value}:{goal.id}",
+        rule=AlertRule.GOAL_REACHED,
+        level=AlertLevel.SUCCESS,
+        severity=SEVERITY[AlertLevel.SUCCESS],
+        period=GOAL_PERIOD,
+        title=f"¡Alcanzaste tu meta {goal.name}!",
+        description=(
+            f"Ya separaste {fmt(goal.saved)} de los {fmt(goal.target)} que te propusiste. "
+            "Puedes archivarla o crear una nueva meta."
+        ),
+        **goal_action(goal),
+    )
+
+
+def goal_alert(goal, currency="PEN"):
+    """Alerta de una meta activa: alcanzada, atrasada o ninguna."""
+    if goal.reached:
+        return goal_reached_alert(goal, currency)
+    if goal.behind:
+        return goal_behind_alert(goal, currency)
+    return None
+
+
+def goal_alerts(goals, currency="PEN"):
+    """Alertas que deberían existir para las metas activas ``goals`` (``GoalProgress``)."""
+    return list(filter(None, map(partial(goal_alert, currency=currency), goals)))
+
+
+def needs_goal_evaluation(evaluated_on, today):
+    """Las alertas de metas se reevalúan una vez al día (el progreso esperado avanza con la fecha)."""
+    return evaluated_on is None or evaluated_on != today
 
 
 def spent_by_category(expenses, period):

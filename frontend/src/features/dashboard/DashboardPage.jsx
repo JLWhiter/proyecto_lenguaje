@@ -15,6 +15,7 @@ import BalanceCard from './BalanceCard'
 import BalanceChart from './BalanceChart'
 import DashboardSkeleton from './DashboardSkeleton'
 import ExpenseDonut from './ExpenseDonut'
+import GoalsCard from './GoalsCard'
 import OnboardingCard from './OnboardingCard'
 import RecentTransactions from './RecentTransactions'
 import { BudgetCard, FlowCard } from './SummaryCards'
@@ -162,6 +163,7 @@ export default function DashboardPage() {
         </div>
 
         <AlertsCard data={data} period={period} search={search} />
+        <GoalsCard />
 
         <div className="grid gap-5 md:grid-cols-2">
           <BalanceChart data={data} />

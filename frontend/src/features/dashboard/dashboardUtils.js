@@ -87,6 +87,11 @@ export function alertTarget(alert, fallbackPeriod) {
   return alertActionTarget(alert?.accion_detalle, alert?.periodo, fallbackPeriod)
 }
 
+/** Metas de ahorro; con `id` resalta esa meta (`?meta=<id>`), el mismo destino que las alertas de metas. */
+export function goalsLink(id) {
+  return alertActionTarget({ type: 'goal', id })
+}
+
 const limaDay = new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' })
 const limaShortDay = new Intl.DateTimeFormat('es-PE', { timeZone: APP_TIME_ZONE, day: 'numeric', month: 'short' })
 

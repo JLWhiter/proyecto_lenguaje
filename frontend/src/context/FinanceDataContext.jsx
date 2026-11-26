@@ -11,7 +11,7 @@ import { createContext, useCallback, useContext, useMemo, useRef, useState } fro
  * También guarda en memoria la última respuesta por `cacheKey` para que un segundo consumidor
  * (p. ej. un diálogo que necesita la lista de cuentas) se pinte al instante mientras revalida.
  */
-export const FINANCE_RESOURCES = ['accounts', 'transactions', 'budgets', 'alerts', 'dashboard']
+export const FINANCE_RESOURCES = ['accounts', 'transactions', 'budgets', 'alerts', 'dashboard', 'goals']
 
 const VersionsContext = createContext(null)
 const ActionsContext = createContext(null)
