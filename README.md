@@ -43,6 +43,10 @@ cd backend
 .\.venv\Scripts\python.exe -m unittest core.test_taxes core.test_transaction_filters core.test_analytics core.test_alerts core.test_budgets core.test_periods
 ```
 
+## Documentación
+
+- [Pruebas](docs/PRUEBAS.md): inventario, casos con valores esperados y resultados.
+
 ## Requisitos
 
 - Python 3.11 o superior (probado con 3.13). Pandas 3 y NumPy 2.3 no soportan versiones anteriores.
@@ -151,17 +155,19 @@ Errores: las reglas de negocio responden `400 {"detail": "..."}` y las validacio
 
 ## Pruebas
 
-Backend (unas 300 pruebas):
+Backend (347 pruebas):
 
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe manage.py test
 ```
 
-Frontend:
+Frontend (67 pruebas con Vitest sobre formato, validaciones, períodos, presupuestos,
+impuestos y movimientos):
 
 ```powershell
 cd frontend
+npm test
 npm run build
 ```
 
