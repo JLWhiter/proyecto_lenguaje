@@ -43,6 +43,11 @@ cd backend
 .\.venv\Scripts\python.exe -m unittest core.test_taxes core.test_transaction_filters core.test_analytics core.test_alerts core.test_budgets core.test_periods
 ```
 
+## Documentación
+
+- [Informe del proyecto](docs/Informe_Proyecto_Finova.docx): portada, introducción, objetivos, diseño, paradigmas, análisis de datos, resultados con gráficos, pruebas, conclusiones y fuentes.
+- [Pruebas](docs/PRUEBAS.md): inventario, casos con valores esperados y resultados.
+
 ## Requisitos
 
 - Python 3.11 o superior (probado con 3.13). Pandas 3 y NumPy 2.3 no soportan versiones anteriores.
