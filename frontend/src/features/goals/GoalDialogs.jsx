@@ -240,7 +240,8 @@ function GoalIconPicker({ value, error, onChange }) {
     <fieldset aria-describedby={error ? errorId : undefined}>
       <legend className="text-sm font-semibold text-slate-700">Ícono</legend>
       <div className="mt-1.5 grid grid-cols-4 gap-2">
-        {GOAL_ICONS.map(({ value: option, label, Icon }) => {
+        {GOAL_ICONS.map((item) => {
+          const { value: option, label, Icon } = item
           const checked = option === value
           const tone = checked ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
           return (

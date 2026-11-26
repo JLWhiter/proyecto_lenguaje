@@ -20,11 +20,36 @@ import {
 } from '../components/icons'
 import { useAuth } from '../context/AuthContext'
 import { isStrongPassword, isValidEmail } from '../lib/validation'
+import { confirmPasswordError, emailError as emailFieldError, newPasswordError } from './authFieldErrors'
 
 // Enlace dentro de la frase de los términos: no se parte en dos líneas y su ::before (absoluto, 13 px arriba
 // y abajo) agranda el área táctil a 40 px sin cambiar el alto de la línea.
 const TERMS_LINK =
   "relative whitespace-nowrap rounded font-bold text-[#047857] underline decoration-[#A7D9C8] underline-offset-2 before:absolute before:-inset-x-1 before:-inset-y-[13px] before:content-[''] hover:text-[#10B981]"
+
+/** Campo del formulario ↔ campo del backend (para limpiar su error al editarlo). */
+const SERVER_FIELD = {
+  fullName: 'full_name',
+  email: 'email',
+  currency: 'currency',
+  password: 'password',
+  passwordConfirm: 'password_confirm',
+  acceptTerms: 'accept_terms',
+}
+
+/** "Coinciden" / "No coinciden" junto a "Confirmar contraseña" (nada mientras está vacío). */
+function confirmBadge(confirm, matches) {
+  if (confirm.length === 0) return null
+  if (matches) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#047857]">
+        <CheckIcon className="h-3.5 w-3.5" />
+        Coinciden
+      </span>
+    )
+  }
+  return <span className="text-[10px] font-semibold text-[#DC5A5A]">No coinciden</span>
+}
 
 export default function RegisterPage() {
   const { register } = useAuth()
@@ -64,14 +89,7 @@ export default function RegisterPage() {
   function update(field, value) {
     setForm((current) => ({ ...current, [field]: value }))
     setServerError(null)
-    const serverField = {
-      fullName: 'full_name',
-      email: 'email',
-      currency: 'currency',
-      password: 'password',
-      passwordConfirm: 'password_confirm',
-      acceptTerms: 'accept_terms',
-    }[field]
+    const serverField = SERVER_FIELD[field]
     if (serverField) {
       setFieldErrors((current) => {
         if (!current[serverField]) return current
@@ -90,35 +108,9 @@ export default function RegisterPage() {
     fieldErrors.full_name ||
     (touched.fullName && form.fullName.trim().length < 2 ? 'Ingresa tu nombre completo.' : '')
 
-  const emailError =
-    fieldErrors.email ||
-    (touched.email
-      ? form.email.trim().length === 0
-        ? 'Ingresa tu correo electrónico.'
-        : !emailValid
-          ? 'Ingresa un correo electrónico válido.'
-          : ''
-      : '')
-
-  const passwordError =
-    fieldErrors.password ||
-    (touched.password
-      ? form.password.length === 0
-        ? 'Crea una contraseña.'
-        : !passwordReady
-          ? 'Usa al menos 8 caracteres e incluye un número o símbolo.'
-          : ''
-      : '')
-
-  const confirmError =
-    fieldErrors.password_confirm ||
-    (touched.passwordConfirm
-      ? form.passwordConfirm.length === 0
-        ? 'Confirma tu contraseña.'
-        : !passwordsMatch
-          ? 'Las contraseñas no coinciden.'
-          : ''
-      : '')
+  const emailError = fieldErrors.email || emailFieldError(form.email, touched.email)
+  const passwordError = fieldErrors.password || newPasswordError(form.password, touched.password)
+  const confirmError = fieldErrors.password_confirm || confirmPasswordError(form.password, form.passwordConfirm, touched.passwordConfirm)
 
   const termsError =
     fieldErrors.accept_terms ||
@@ -296,18 +288,7 @@ export default function RegisterPage() {
                 value={form.passwordConfirm}
                 disabled={submitting}
                 error={confirmError}
-                labelExtra={
-                  form.passwordConfirm.length > 0 ? (
-                    passwordsMatch ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#047857]">
-                        <CheckIcon className="h-3.5 w-3.5" />
-                        Coinciden
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-semibold text-[#DC5A5A]">No coinciden</span>
-                    )
-                  ) : null
-                }
+                labelExtra={confirmBadge(form.passwordConfirm, passwordsMatch)}
                 onChange={(event) => update('passwordConfirm', event.target.value)}
                 onBlur={() => markTouched('passwordConfirm')}
               />
@@ -319,34 +300,37 @@ export default function RegisterPage() {
                   termsError ? 'border-red-200 bg-red-50/40' : 'border-[#E5E7EB] bg-[#FBFDFC]'
                 }`}
               >
-                {/* Área táctil de 40×40 px para la casilla; el texto es una segunda etiqueta. */}
-                <label htmlFor="accept-terms" className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center">
-                  <input
-                    id="accept-terms"
-                    name="acceptTerms"
-                    type="checkbox"
-                    checked={form.acceptTerms}
-                    disabled={submitting}
-                    onChange={(event) => {
-                      update('acceptTerms', event.target.checked)
-                      markTouched('acceptTerms')
-                    }}
-                    onBlur={() => markTouched('acceptTerms')}
-                    className="h-4 w-4 shrink-0 rounded border-[#CBD5E1] accent-[#059669] focus:ring-[#10B981]/30"
-                  />
-                </label>
-                {/* Líneas de 40 px (alineadas con el área de la casilla): cada enlace amplía su área táctil a 40 px
-                    de alto con ::before sin mover el texto, y dos enlaces en líneas vecinas no se tapan. */}
-                <label htmlFor="accept-terms" className="block cursor-pointer pr-2 text-[12px] leading-10 text-[#475569]">
-                  Acepto los{' '}
-                  <Link to="/terminos" onClick={(event) => event.stopPropagation()} className={TERMS_LINK}>
-                    Términos de Servicio
-                  </Link>{' '}
-                  y la{' '}
-                  <Link to="/privacidad" onClick={(event) => event.stopPropagation()} className={TERMS_LINK}>
-                    Política de Privacidad
-                  </Link>{' '}
-                  de Finova.
+                {/* Una sola etiqueta con el texto (`contents`: no crea caja propia, sus dos zonas son hijas del recuadro):
+                    área táctil de 40×40 px para la casilla y el texto, ambas marcan la casilla al tocarlas. */}
+                <label htmlFor="accept-terms" className="contents">
+                  <span className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center">
+                    <input
+                      id="accept-terms"
+                      name="acceptTerms"
+                      type="checkbox"
+                      checked={form.acceptTerms}
+                      disabled={submitting}
+                      onChange={(event) => {
+                        update('acceptTerms', event.target.checked)
+                        markTouched('acceptTerms')
+                      }}
+                      onBlur={() => markTouched('acceptTerms')}
+                      className="h-4 w-4 shrink-0 rounded border-[#CBD5E1] accent-[#059669] focus:ring-[#10B981]/30"
+                    />
+                  </span>
+                  {/* Líneas de 40 px (alineadas con el área de la casilla): cada enlace amplía su área táctil a 40 px
+                      de alto con ::before sin mover el texto, y dos enlaces en líneas vecinas no se tapan. */}
+                  <span className="block cursor-pointer pr-2 text-[12px] leading-10 text-[#475569]">
+                    Acepto los{' '}
+                    <Link to="/terminos" onClick={(event) => event.stopPropagation()} className={TERMS_LINK}>
+                      Términos de Servicio
+                    </Link>{' '}
+                    y la{' '}
+                    <Link to="/privacidad" onClick={(event) => event.stopPropagation()} className={TERMS_LINK}>
+                      Política de Privacidad
+                    </Link>{' '}
+                    de Finova.
+                  </span>
                 </label>
               </div>
               {termsError && (

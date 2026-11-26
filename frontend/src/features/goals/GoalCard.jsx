@@ -108,21 +108,21 @@ export function GoalOutlook({ goal, className = 'mt-3' }) {
 
   if (goal.estado === STATUS.REACHED) {
     return (
-      <OutlookBox Icon={CheckCircle2} tone={tone} className={className}>
+      <OutlookBox icon={CheckCircle2} tone={tone} className={className}>
         ¡Lo lograste! Puedes archivarla o seguir sumando.
       </OutlookBox>
     )
   }
   if (goal.estado === STATUS.OVERDUE) {
     return (
-      <OutlookBox Icon={CalendarX2} tone={tone} className={className}>
+      <OutlookBox icon={CalendarX2} tone={tone} className={className}>
         Venció el {date} y te faltan <Amount value={goal.restante} className="font-semibold" />. Cambia la fecha para seguir.
       </OutlookBox>
     )
   }
   const estimate = estimateInfo(goal)
   return (
-    <OutlookBox Icon={CalendarClock} tone={tone} className={className}>
+    <OutlookBox icon={CalendarClock} tone={tone} className={className}>
       Ahorra <Amount value={goal.ahorro_mensual_necesario} className="font-semibold" /> al mes para llegar al {date} (
       {monthsText(goal.meses_restantes)}).
       {estimate && <span className={`mt-1 block text-xs ${estimate.late ? 'font-medium' : 'opacity-80'}`}>{estimate.text}</span>}
@@ -130,7 +130,8 @@ export function GoalOutlook({ goal, className = 'mt-3' }) {
   )
 }
 
-function OutlookBox({ Icon, tone, className, children }) {
+function OutlookBox({ icon, tone, className, children }) {
+  const Icon = icon
   return (
     <p className={`flex items-start gap-2 rounded-xl px-3 py-2 text-sm leading-6 ${tone} ${className}`}>
       <Icon className="mt-1 h-4 w-4 shrink-0" aria-hidden="true" />

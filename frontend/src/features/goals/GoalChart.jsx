@@ -44,7 +44,7 @@ export default function GoalChart({ series }) {
             <XAxis dataKey="label" tickLine={false} axisLine={false} interval="preserveStartEnd" tick={{ fill: '#64748b', fontSize: 11 }} />
             <YAxis hide />
             <ReferenceLine y={0} stroke="#cbd5e1" />
-            <Tooltip cursor={{ fill: '#f1f5f9' }} content={(props) => <MonthTooltip {...props} format={text} />} wrapperStyle={{ outline: 'none' }} />
+            <Tooltip cursor={{ fill: '#f1f5f9' }} content={<MonthTooltip format={text} />} wrapperStyle={{ outline: 'none' }} />
             <Bar dataKey="value" name="Aporte neto" radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={!reduceMotion}>
               {points.map((point) => (
                 <Cell key={point.mes} fill={point.value < 0 ? NEGATIVE : POSITIVE} />
@@ -56,11 +56,11 @@ export default function GoalChart({ series }) {
       <figcaption className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />
-          Mes con más aportes que retiros
+          {' '}Mes con más aportes que retiros
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm bg-red-500" />
-          Mes con retiro neto
+          {' '}Mes con retiro neto
         </span>
       </figcaption>
       <table className="sr-only">

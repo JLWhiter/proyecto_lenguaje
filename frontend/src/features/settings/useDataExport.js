@@ -7,7 +7,7 @@ import { monthLabel } from '../../lib/period'
 /**
  * Exportación de movimientos a Excel desde Configuración.
  *
- * "Todo el historial" es una sola petición (`/transacciones/exportar/?todo=1`): el backend arma un libro con
+ * Exportar todo el historial es una sola petición (`/transacciones/exportar/` con `todo=1`): el backend arma un libro con
  * todos los movimientos, un resumen por categoría y la evolución mes a mes. "Solo un mes" trae además sus
  * presupuestos. El archivo se guarda con el nombre que envía el backend.
  *

@@ -10,15 +10,20 @@ import {
   amountError,
   BUDGET_ICONS,
   BUDGET_MUTATION_TAGS,
+  budgetPayload,
   categoryKey,
+  changedBudgetFields,
   formatPct,
   freeMargin,
   guessIcon,
+  initialRebalanceValues,
   looseCategoryKey,
   normalizeAmount,
-  overspent,
-  rebalanceDefaults,
+  overMarginError,
   shortfall,
+  sourceHintText,
+  suggestedAmounts,
+  targetHintText,
 } from './budgetModel'
 import { controlClass, Field, focusFirstError, FormModal, QuickPicks, splitApiErrors } from './FormParts'
 import { useExpenseCategories } from './useBudgets'
@@ -96,23 +101,12 @@ export function BudgetFormDialog({ budget = null, period, periodLabel, budgets =
       return
     }
 
-    const payload = {
-      category: values.category.trim().replace(/\s+/g, ' '),
-      limit_amount: normalizeAmount(values.limit_amount),
-      icon: values.icon,
-      description: values.description.trim(),
-    }
-    let body = payload
-    if (isEdit) {
-      body = {}
-      if (payload.category !== budget.nombre) body.category = payload.category
-      if (Number(payload.limit_amount) !== toNumber(budget.presupuesto)) body.limit_amount = payload.limit_amount
-      if (payload.icon !== budget.icon) body.icon = payload.icon
-      if (payload.description !== (budget.descripcion ?? '')) body.description = payload.description
-      if (Object.keys(body).length === 0) {
-        onClose()
-        return
-      }
+    const payload = budgetPayload(values)
+    // Al editar solo se envía lo que cambió; si nada cambió, basta con cerrar.
+    const body = isEdit ? changedBudgetFields(payload, budget) : payload
+    if (Object.keys(body).length === 0) {
+      onClose()
+      return
     }
 
     setBusy(true)
@@ -125,17 +119,21 @@ export function BudgetFormDialog({ budget = null, period, periodLabel, budgets =
       toast.success(isEdit ? `Actualizaste el presupuesto de ${name}.` : `Creaste el presupuesto de ${name} para ${periodLabel}.`)
       onClose()
     } catch (error) {
-      if (error?.status === 404) {
-        invalidate(BUDGET_MUTATION_TAGS)
-        setFormError('Este presupuesto ya no existe (quizá lo eliminaste en otra pestaña). Cierra este diálogo para ver la lista actualizada.')
-      } else {
-        const { fields, message } = splitApiErrors(error, BUDGET_FIELDS)
-        setErrors(fields)
-        setFormError(message)
-        focusFirstError(formRef, BUDGET_FIELDS, fields)
-      }
+      showSaveError(error)
       setBusy(false)
     }
+  }
+
+  function showSaveError(error) {
+    if (error?.status === 404) {
+      invalidate(BUDGET_MUTATION_TAGS)
+      setFormError('Este presupuesto ya no existe (quizá lo eliminaste en otra pestaña). Cierra este diálogo para ver la lista actualizada.')
+      return
+    }
+    const { fields, message } = splitApiErrors(error, BUDGET_FIELDS)
+    setErrors(fields)
+    setFormError(message)
+    focusFirstError(formRef, BUDGET_FIELDS, fields)
   }
 
   // Ayuda de la categoría: ¿coincide con la de tus movimientos?
@@ -352,11 +350,7 @@ export function RebalanceDialog({ period, periodLabel, phase, budgets = [], init
   const { symbol, money } = useMoney()
   const formId = useId()
   const formRef = useRef(null)
-  const [values, setValues] = useState(() => {
-    const base = rebalanceDefaults(budgets, phase, initial ?? {})
-    const amount = initial?.amount !== undefined && initial?.amount !== null && initial?.amount !== '' ? toNumber(initial.amount).toFixed(2) : base.amount
-    return { source_category: base.source, target_category: base.target, amount }
-  })
+  const [values, setValues] = useState(() => initialRebalanceValues(budgets, phase, initial))
   const [errors, setErrors] = useState({})
   const [formError, setFormError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -389,12 +383,7 @@ export function RebalanceDialog({ period, periodLabel, phase, budgets = [], init
     else if (source && source.id === target.id) result.target_category = 'Elige un presupuesto distinto al de origen.'
     const amount = amountError(values.amount, { label: 'el monto a mover' })
     if (amount) result.amount = amount
-    else if (source && typedAmount > margin) {
-      result.amount =
-        margin <= 0
-          ? `${source.nombre} no tiene margen libre: ya gastó todo su límite. Elige otro origen.`
-          : `${source.nombre} solo tiene ${money(margin)} libres. Ingresa ese monto o uno menor.`
-    }
+    else if (source && typedAmount > margin) result.amount = overMarginError(source, money)
     return result
   }
 
@@ -435,38 +424,13 @@ export function RebalanceDialog({ period, periodLabel, phase, budgets = [], init
   const sourceOptions = budgets.map((item) => [item.nombre, `${item.nombre} · ${money(freeMargin(item))} libres`])
   const targetOptions = budgets.map((item) => [item.nombre, `${item.nombre} · ${formatPct(item.porcentaje)} usado`])
 
-  const sourceHint = source
-    ? margin > 0
-      ? `Margen libre: ${money(margin)} (límite ${money(source.presupuesto)}, gastado ${money(source.gastado)}).`
-      : `Sin margen libre: ya gastó ${money(source.gastado)} de ${money(source.presupuesto)}.`
-    : null
-  // Destino: exceso que ya tiene (gastado − límite) y, en el mes en curso, lo que le faltará al ritmo actual
-  // (`need`, proyección − límite). Se muestran los dos para que cuadren con la tarjeta y la alerta.
-  const exceeded = target ? overspent(target) : 0
-  let targetHint = null
-  if (target) {
-    const spentText = `Gastado ${money(target.gastado)} de ${money(target.presupuesto)}`
-    if (exceeded > 0 && need > exceeded) targetHint = `${spentText}. Ya se pasó por ${money(exceeded)} · al ritmo actual le faltarán ${money(need)}.`
-    else if (exceeded > 0) targetHint = `${spentText}. Ya se pasó por ${money(exceeded)}.`
-    else if (need > 0) targetHint = `${spentText}. Al ritmo actual le faltarán ${money(need)}.`
-    else targetHint = `${spentText} (${formatPct(target.porcentaje)}).`
-  }
-
-  const amountPicks = []
-  if (source && target && source.id !== target.id && margin > 0) {
-    const addPick = (key, amount, label) => {
-      const value = Math.min(amount, margin).toFixed(2)
-      if (amountPicks.some((pick) => pick.value === value)) return
-      amountPicks.push({ key, value, label: `${amount > margin ? 'Todo lo posible' : label} (${money(value)})` })
-    }
-    if (exceeded > 0) addPick('exceeded', exceeded, 'Cubrir el exceso')
-    if (need > exceeded) addPick('need', need, exceeded > 0 ? 'Cubrir hasta fin de mes' : 'Cubrir lo que falta')
-    if (need < margin) addPick('all', margin, 'Todo el margen')
-  }
+  const sourceHint = sourceHintText(source, money)
+  const targetHint = targetHintText(target, need, money)
   const pickedAmount = amountIsValid ? typedAmount.toFixed(2) : null
-  const picks = amountPicks.map((pick) => ({ ...pick, active: pickedAmount === pick.value }))
+  const picks = suggestedAmounts({ source, target, need, money }).map((pick) => ({ ...pick, active: pickedAmount === pick.value }))
 
   const showPreview = source && target && source.id !== target.id && amountIsValid
+  const noMargin = !showPreview && budgets.every((item) => freeMargin(item) <= 0)
 
   return (
     <FormModal
@@ -547,19 +511,18 @@ export function RebalanceDialog({ period, periodLabel, phase, budgets = [], init
         )}
       </Field>
 
-      {showPreview ? (
+      {showPreview && (
         <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700" aria-live="polite">
           <p className="font-semibold text-slate-900">Así quedarán los límites</p>
           <PreviewRow name={source.nombre} from={source.presupuesto} to={toNumber(source.presupuesto) - typedAmount} money={money} />
           <PreviewRow name={target.nombre} from={target.presupuesto} to={toNumber(target.presupuesto) + typedAmount} money={money} />
         </div>
-      ) : (
-        budgets.every((item) => freeMargin(item) <= 0) && (
-          <p className="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-sm leading-6 text-slate-600">
-            <Info className="mt-1 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
-            Ningún presupuesto tiene margen libre este mes. Para cubrir un exceso, sube su límite con «Editar».
-          </p>
-        )
+      )}
+      {noMargin && (
+        <p className="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-sm leading-6 text-slate-600">
+          <Info className="mt-1 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+          Ningún presupuesto tiene margen libre este mes. Para cubrir un exceso, sube su límite con «Editar».
+        </p>
       )}
     </FormModal>
   )

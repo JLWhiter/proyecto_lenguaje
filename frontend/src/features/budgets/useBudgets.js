@@ -9,7 +9,7 @@ import { budgetsApi } from '../../lib/api/budgets'
 import { categoriesApi } from '../../lib/api/categories'
 import { toNumber } from '../../lib/format'
 import { monthLabel } from '../../lib/period'
-import { ACTION_PARAM, BUDGET_MUTATION_TAGS, EDIT_ACTION, HIGHLIGHT_PARAM } from './budgetModel'
+import { ACTION_PARAM, BUDGET_MUTATION_TAGS, EDIT_ACTION, HIGHLIGHT_PARAM, skippedCopyText } from './budgetModel'
 
 /**
  * Presupuestos del mes `period` (AAAA-MM). Se recarga con invalidate('budgets').
@@ -105,9 +105,8 @@ export function useBudgetActions({ period, periodLabel }) {
           } else if (copied === 0) {
             toast.info(`${periodLabel} ya tiene todas las categorías de ${sourceLabel}: no se copió nada.`)
           } else {
-            const skippedText =
-              skipped === 0 ? '' : skipped === 1 ? ' Se omitió 1 que ya existía en este mes.' : ` Se omitieron ${skipped} que ya existían en este mes.`
-            toast.success(`${result?.message || `Se copiaron ${copied} presupuestos de ${sourceLabel}.`}${skippedText}`)
+            const copiedText = result?.message || `Se copiaron ${copied} presupuestos de ${sourceLabel}.`
+            toast.success(copiedText + skippedCopyText(skipped))
           }
           return true
         } catch (error) {
@@ -121,7 +120,9 @@ export function useBudgetActions({ period, periodLabel }) {
   const applySuggestion = useCallback(
     async (action) => {
       if (!action) return false
-      const { type: _type, ...payload } = action
+      // El backend recibe la acción sin su `type` ('rebalance').
+      const payload = { ...action }
+      delete payload.type
       const amountText = showAmounts ? money(payload.amount) : 'el monto sugerido'
       const ok = await confirm({
         title: 'Aplicar sugerencia',

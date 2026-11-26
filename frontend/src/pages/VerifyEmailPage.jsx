@@ -62,13 +62,13 @@ export default function VerifyEmailPage() {
 
         <AuthCard className="mt-7 animate-rise text-center">
           {state.status === 'loading' && (
-            <div className="space-y-5 py-4" role="status">
+            <output className="block space-y-5 py-4">
               <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#F0F7F5] text-[#047857]">
                 <LoaderIcon className="h-7 w-7" />
               </span>
               <h1 className="text-[20px] font-extrabold text-[#111827]">Verificando tu correo…</h1>
               <p className="text-[12.5px] text-[#64748B]">Esto tomará solo un momento.</p>
-            </div>
+            </output>
           )}
 
           {state.status === 'success' && (
@@ -153,9 +153,6 @@ function ErrorBadge() {
 
 /** Enlace no válido o vencido: con sesión se puede pedir otro aquí mismo; sin sesión, tras iniciar sesión. */
 function InvalidLink({ message }) {
-  const { user } = useAuth()
-  const { resend, sending, feedback } = useResendVerification()
-
   return (
     <div className="space-y-5">
       <ErrorBadge />
@@ -169,43 +166,57 @@ function InvalidLink({ message }) {
         {message}
       </Alert>
 
-      {user ? (
-        user.email_verified ? (
-          <>
-            <Alert tone="success" className="text-left">
-              Tu correo {user.email} ya está verificado. No necesitas hacer nada más.
-            </Alert>
-            <Link to="/app" className={primaryLink}>
-              Ir a Finova
-              <ArrowRightIcon className="h-4 w-4" />
-            </Link>
-          </>
-        ) : (
-          <>
-            {feedback && (
-              <Alert tone={feedback.tone} title={feedback.title} className="text-left">
-                {feedback.message}
-              </Alert>
-            )}
-            <button type="button" onClick={resend} disabled={sending} className={primaryLink}>
-              {sending ? 'Enviando…' : 'Enviar un enlace nuevo'}
-            </button>
-            <Link to="/app" className={secondaryLink}>
-              Ir a Finova
-            </Link>
-          </>
-        )
-      ) : (
-        <>
-          <p className="text-[12.5px] leading-relaxed text-[#64748B]">
-            Inicia sesión y solicita un enlace nuevo desde <span className="font-semibold text-[#1F2937]">Configuración</span>.
-          </p>
-          <Link to="/login" state={{ from: '/app/configuracion' }} className={primaryLink}>
-            Iniciar sesión
-            <ArrowRightIcon className="h-4 w-4" />
-          </Link>
-        </>
-      )}
+      <InvalidLinkActions />
     </div>
+  )
+}
+
+/** Qué hacer con un enlace vencido: sin sesión, iniciarla; con el correo ya verificado, nada; si no, pedir otro. */
+function InvalidLinkActions() {
+  const { user } = useAuth()
+  const { resend, sending, feedback } = useResendVerification()
+
+  if (!user) {
+    return (
+      <>
+        <p className="text-[12.5px] leading-relaxed text-[#64748B]">
+          Inicia sesión y solicita un enlace nuevo desde <span className="font-semibold text-[#1F2937]">Configuración</span>.
+        </p>
+        <Link to="/login" state={{ from: '/app/configuracion' }} className={primaryLink}>
+          Iniciar sesión
+          <ArrowRightIcon className="h-4 w-4" />
+        </Link>
+      </>
+    )
+  }
+
+  if (user.email_verified) {
+    return (
+      <>
+        <Alert tone="success" className="text-left">
+          Tu correo {user.email} ya está verificado. No necesitas hacer nada más.
+        </Alert>
+        <Link to="/app" className={primaryLink}>
+          Ir a Finova
+          <ArrowRightIcon className="h-4 w-4" />
+        </Link>
+      </>
+    )
+  }
+
+  return (
+    <>
+      {feedback && (
+        <Alert tone={feedback.tone} title={feedback.title} className="text-left">
+          {feedback.message}
+        </Alert>
+      )}
+      <button type="button" onClick={resend} disabled={sending} className={primaryLink}>
+        {sending ? 'Enviando…' : 'Enviar un enlace nuevo'}
+      </button>
+      <Link to="/app" className={secondaryLink}>
+        Ir a Finova
+      </Link>
+    </>
   )
 }

@@ -21,9 +21,12 @@ export function useIncomeTax(query) {
   }
 
   const stale = resource.status === 'loading' && last !== null
+  let data
+  if (resource.status === 'ready') data = resource.data
+  else if (stale) data = last.data
   return {
     status: stale ? 'ready' : resource.status,
-    data: resource.status === 'ready' ? resource.data : stale ? last.data : undefined,
+    data,
     error: resource.error,
     stale,
     reload: resource.reload,

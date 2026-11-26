@@ -16,6 +16,14 @@ function rateLabel(value) {
   return `${Number.isInteger(value) ? value : value.toFixed(2)}%`
 }
 
+/** Frase de un tramo para lectores de pantalla ('Tramo 2 (14%): 40% usado.'). */
+function bracketSummary(bracket) {
+  const name = `Tramo ${bracket.number} (${rateLabel(bracket.tasa)})`
+  if (!bracket.reached) return `${name}: no alcanzado.`
+  if (bracket.hasta === null) return `${name}: alcanzado, sin tope.`
+  return `${name}: ${Math.round(bracket.fill * 100)}% usado.`
+}
+
 function Swatch({ bracket }) {
   return <span aria-hidden="true" className={`inline-block h-3 w-3 shrink-0 rounded-[4px] ${bracket.color} ${bracket.reached ? '' : 'opacity-30'}`} />
 }
@@ -48,11 +56,7 @@ function BracketScale({ brackets, net, uit }) {
 
   const description = [
     hidden ? 'Tu renta neta: monto oculto.' : `Tu renta neta de ${soles(net)} equivale a ${formatUit(netUit)} UIT.`,
-    ...brackets.map((bracket) =>
-      bracket.reached
-        ? `Tramo ${bracket.number} (${rateLabel(bracket.tasa)}): ${bracket.hasta === null ? 'alcanzado, sin tope' : `${Math.round(bracket.fill * 100)}% usado`}.`
-        : `Tramo ${bracket.number} (${rateLabel(bracket.tasa)}): no alcanzado.`,
-    ),
+    ...brackets.map(bracketSummary),
   ].join(' ')
 
   return (
@@ -66,6 +70,7 @@ function BracketScale({ brackets, net, uit }) {
           </>
         )}
       </p>
+      {/* eslint-disable-next-line jsx-a11y/prefer-tag-over-role -- gráfico hecho con bloques <div>: <img> no admite hijos */}
       <div role="img" aria-label={description} className="mt-3 flex gap-0.5">
         {segments.map((segment) => (
           <div key={segment.number} className="min-w-0" style={{ flexGrow: segment.width, flexBasis: 0 }}>

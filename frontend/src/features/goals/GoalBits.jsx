@@ -58,7 +58,7 @@ export function GoalProgress({ goal, legend = true, className = '' }) {
           {marker !== null && (
             <span className="inline-flex items-center gap-1.5">
               <span aria-hidden="true" className="h-3 w-0.5 rounded-full bg-slate-700" />
-              Deberías llevar <span className="tabular-nums">{percentText(goal.porcentaje_esperado)}</span>
+              {' '}Deberías llevar <span className="tabular-nums">{percentText(goal.porcentaje_esperado)}</span>
             </span>
           )}
         </p>

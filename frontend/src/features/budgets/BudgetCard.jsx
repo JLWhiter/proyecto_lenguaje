@@ -140,10 +140,6 @@ export default function BudgetCard({ budget, phase, movementsTo, highlighted = f
 function useProjectionText(budget, phase) {
   const { money } = useMoney()
   const { showAmounts } = usePreferences()
-  const limit = toNumber(budget.presupuesto)
-  const spent = toNumber(budget.gastado)
-  const projected = toNumber(budget.proyeccion)
-  const remaining = toNumber(budget.restante)
 
   if (phase === 'future') {
     return {
@@ -152,21 +148,31 @@ function useProjectionText(budget, phase) {
       text: 'El mes aún no empieza: aquí se sumarán los gastos de esta categoría desde el día 1.',
     }
   }
+  if (phase === 'past') return closedMonthProjection(toNumber(budget.restante), showAmounts, money)
+  return currentMonthProjection(budget, showAmounts, money)
+}
 
-  if (phase === 'past') {
-    if (remaining >= 0) {
-      return {
-        Icon: CheckCircle2,
-        className: 'bg-slate-50 text-slate-600',
-        text: showAmounts ? `Mes cerrado con ${money(remaining)} sin usar.` : 'Mes cerrado dentro del límite.',
-      }
-    }
+/** Mes cerrado: cuánto quedó sin usar o cuánto se excedió. */
+function closedMonthProjection(remaining, showAmounts, money) {
+  if (remaining >= 0) {
     return {
-      Icon: TrendingUp,
-      className: 'bg-red-50 text-red-700',
-      text: showAmounts ? `Mes cerrado con ${money(-remaining)} de exceso.` : 'Mes cerrado por encima del límite.',
+      Icon: CheckCircle2,
+      className: 'bg-slate-50 text-slate-600',
+      text: showAmounts ? `Mes cerrado con ${money(remaining)} sin usar.` : 'Mes cerrado dentro del límite.',
     }
   }
+  return {
+    Icon: TrendingUp,
+    className: 'bg-red-50 text-red-700',
+    text: showAmounts ? `Mes cerrado con ${money(-remaining)} de exceso.` : 'Mes cerrado por encima del límite.',
+  }
+}
+
+/** Mes en curso: cómo cerraría el mes al ritmo actual frente al límite. */
+function currentMonthProjection(budget, showAmounts, money) {
+  const limit = toNumber(budget.presupuesto)
+  const spent = toNumber(budget.gastado)
+  const projected = toNumber(budget.proyeccion)
 
   if (spent <= 0) {
     return {

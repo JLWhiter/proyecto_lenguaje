@@ -8,7 +8,9 @@ import BudgetCard from './BudgetCard'
 import { BudgetFormDialog, RebalanceDialog } from './BudgetDialogs'
 import {
   BUDGET_STATES,
-  categoryKey,
+  copyableCount,
+  copyBlockedReason,
+  emptyMonthDescription,
   FILTER_ALL,
   freeMargin,
   lastPlannableMonth,
@@ -38,41 +40,30 @@ export default function BudgetsPage() {
   const phase = periodPhase(period, defaultPeriod)
   const previousMonth = shiftMonth(period, -1)
   const previousLabel = monthLabel(previousMonth)
-  const lastMonth = lastPlannableMonth(defaultPeriod)
-  const canGoNext = period < lastMonth
 
   const budgets = useBudgets(period)
   const actions = useBudgetActions({ period, periodLabel })
   const [filter, setFilter] = useState(FILTER_ALL)
   const [dialog, setDialog] = useState(null)
   const listTitleRef = useRef(null)
-  const copyReasonId = useId()
   const closeDialog = () => setDialog(null)
 
   const ready = budgets.status === 'ready'
   const data = budgets.data
   const items = useMemo(() => data?.categorias ?? [], [data])
+  const hasItems = ready && items.length > 0
   const isEmpty = ready && items.length === 0
   const canRebalance = items.length >= 2 && phase !== 'past'
-  const showToolbarCopy = ready && items.length > 0 && phase !== 'past'
 
   // El mes anterior se pide solo cuando se ofrece copiarlo (mes vacío o botón "Copiar de…"),
   // para saber si hay algo que copiar.
-  const previous = useBudgets(previousMonth, { enabled: isEmpty || showToolbarCopy })
-  const previousItems = previous.status === 'ready' && previous.data ? previous.data.categorias ?? [] : null
-  const previousCount = previousItems ? previousItems.length : null
-  // Presupuestos del mes anterior cuya categoría aún no existe en este mes (los que el backend copiaría).
-  const copyableCount = useMemo(() => {
-    if (!previousItems) return null
-    const current = new Set(items.map((item) => categoryKey(item.nombre)))
-    return previousItems.filter((item) => !current.has(categoryKey(item.nombre))).length
-  }, [previousItems, items])
-  const copyBlockedReason =
-    copyableCount !== 0
-      ? null
-      : previousCount === 0
-        ? `Nada que copiar: ${previousLabel} no tiene presupuestos.`
-        : `Nada que copiar: ya tienes en ${periodLabel} todas las categorías de ${previousLabel}.`
+  const { previousCount, blockedReason } = usePreviousMonth({
+    previousMonth,
+    items,
+    enabled: isEmpty || (hasItems && phase !== 'past'),
+    previousLabel,
+    periodLabel,
+  })
 
   const highlightId = useBudgetHighlight({
     items,
@@ -84,23 +75,6 @@ export default function BudgetsPage() {
     // "Ajustar presupuesto" desde una alerta (`&accion=editar`): abre la edición tras resaltar la tarjeta.
     onEdit: (budget) => setDialog({ type: 'form', budget }),
   })
-
-  const counts = useMemo(() => {
-    const result = { [FILTER_ALL]: items.length }
-    for (const state of BUDGET_STATES) result[state.key] = 0
-    for (const item of items) result[stateOf(item)] = (result[stateOf(item)] ?? 0) + 1
-    return result
-  }, [items])
-
-  const filterOptions = [
-    { key: FILTER_ALL, label: <ChipLabel text="Todos" count={counts[FILTER_ALL]} /> },
-    ...BUDGET_STATES.map((state) => ({
-      key: state.key,
-      label: <ChipLabel text={state.label} count={counts[state.key]} dot={stylesFor(state.key).dot} />,
-    })),
-  ]
-  const visible = filter === FILTER_ALL ? items : items.filter((item) => stateOf(item) === filter)
-  const activeFilterLabel = BUDGET_STATES.find((state) => state.key === filter)?.label
 
   function openCreate() {
     setDialog({ type: 'form' })
@@ -122,6 +96,7 @@ export default function BudgetsPage() {
 
   const copying = actions.pending?.type === 'copy'
   const applying = actions.pending?.type === 'apply'
+  const copyPrevious = () => !copying && actions.copyFrom(previousMonth)
 
   return (
     <div className="space-y-6">
@@ -140,64 +115,20 @@ export default function BudgetsPage() {
         )}
       </div>
 
-      <div className="rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <IconButton label={`Ir a ${previousLabel}`} onClick={() => setPeriod(previousMonth)}>
-              <ChevronLeft className="h-4 w-4" />
-            </IconButton>
-            <div className="min-w-0 flex-1 text-center md:flex-none md:text-left" aria-live="polite">
-              <p className="truncate text-lg font-semibold text-slate-900">{periodLabel}</p>
-              <span className={`mt-0.5 inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${PHASE_BADGE[phase].className}`}>
-                {PHASE_BADGE[phase].label}
-              </span>
-            </div>
-            <IconButton
-              label={canGoNext ? `Ir a ${monthLabel(shiftMonth(period, 1))}` : `Puedes planificar hasta ${monthLabel(lastMonth)}`}
-              onClick={() => setPeriod(shiftMonth(period, 1))}
-              disabled={!canGoNext}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </IconButton>
-          </div>
-
-          {ready && items.length > 0 && (phase !== 'past' || canRebalance) && (
-            <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap md:justify-end">
-              {phase !== 'past' && (
-                <button
-                  type="button"
-                  onClick={() => !copying && actions.copyFrom(previousMonth)}
-                  aria-disabled={copying || undefined}
-                  disabled={Boolean(copyBlockedReason) && !copying}
-                  aria-describedby={copyBlockedReason ? copyReasonId : undefined}
-                  className={`${SECONDARY_BUTTON} disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 disabled:hover:bg-slate-50`}
-                  title={copyBlockedReason ?? `Copia los presupuestos de ${previousLabel} que aún no tengas en ${periodLabel}`}
-                >
-                  <Copy className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  <span className="truncate">{copying ? 'Copiando…' : `Copiar de ${previousLabel}`}</span>
-                </button>
-              )}
-              {canRebalance && (
-                <button type="button" onClick={() => openRebalance()} className={SECONDARY_BUTTON}>
-                  <ArrowRightLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  <span className="truncate">Mover saldo</span>
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-        {showToolbarCopy && copyBlockedReason && (
-          <p id={copyReasonId} className="mt-2 text-xs leading-5 text-slate-600 md:text-right">
-            {copyBlockedReason}
-          </p>
-        )}
-        {phase === 'past' && ready && items.length > 0 && (
-          <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-            Estás viendo un mes cerrado: sirve de referencia. Puedes corregir límites, pero las sugerencias y el rebalanceo solo aplican al mes en curso o a
-            los que planificas.
-          </p>
-        )}
-      </div>
+      <MonthToolbar
+        period={period}
+        periodLabel={periodLabel}
+        previousLabel={previousLabel}
+        phase={phase}
+        lastMonth={lastPlannableMonth(defaultPeriod)}
+        onPeriodChange={setPeriod}
+        hasItems={hasItems}
+        canRebalance={canRebalance}
+        copying={copying}
+        copyBlockedReason={blockedReason}
+        onCopy={copyPrevious}
+        onRebalance={() => openRebalance()}
+      />
 
       {budgets.status === 'loading' && <BudgetsSkeleton />}
 
@@ -206,50 +137,27 @@ export default function BudgetsPage() {
       )}
 
       {ready && budgets.error && (
-        <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <output className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
           <span>No pudimos actualizar tus presupuestos; puede que veas datos de hace un momento.</span>
           <button type="button" onClick={budgets.reload} className="inline-flex min-h-10 items-center gap-1.5 font-semibold text-amber-900 hover:underline">
             <RotateCw className="h-4 w-4" aria-hidden="true" />
             Reintentar
           </button>
-        </div>
+        </output>
       )}
 
       {isEmpty && (
-        <EmptyState
-          icon={Target}
-          title={`Aún no tienes presupuestos para ${periodLabel}`}
-          description={
-            previousCount > 0
-              ? `En ${previousLabel} tenías ${previousCount === 1 ? '1 presupuesto' : `${previousCount} presupuestos`}. Cópialos para empezar con los mismos límites o crea uno nuevo.`
-              : previousCount === 0
-                ? `${previousLabel} tampoco tiene presupuestos. Crea uno por categoría para controlar cuánto gastas.`
-                : 'Crea un presupuesto por categoría para controlar cuánto gastas, o copia los del mes anterior.'
-          }
-          action={
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:justify-center">
-              {previousCount !== 0 && (
-                <button
-                  type="button"
-                  onClick={() => !copying && actions.copyFrom(previousMonth)}
-                  aria-disabled={copying || undefined}
-                  className={PRIMARY_BUTTON}
-                >
-                  <Copy className="h-4 w-4" aria-hidden="true" />
-                  {copying ? 'Copiando…' : `Copiar presupuestos de ${previousLabel}`}
-                </button>
-              )}
-              <button type="button" onClick={openCreate} className={previousCount === 0 ? PRIMARY_BUTTON : SECONDARY_BUTTON}>
-                <Plus className="h-4 w-4" aria-hidden="true" />
-                Crear presupuesto
-              </button>
-            </div>
-          }
-          className="py-10"
+        <EmptyMonth
+          periodLabel={periodLabel}
+          previousLabel={previousLabel}
+          previousCount={previousCount}
+          copying={copying}
+          onCopy={copyPrevious}
+          onCreate={openCreate}
         />
       )}
 
-      {ready && items.length > 0 && (
+      {hasItems && (
         <>
           <div className={`grid gap-6 ${data?.ia_alert?.titulo ? 'xl:grid-cols-2' : ''}`}>
             <BudgetSummary summary={data.summary} phase={phase} count={items.length} periodLabel={periodLabel} />
@@ -262,51 +170,21 @@ export default function BudgetsPage() {
             />
           </div>
 
-          <section aria-labelledby="budgets-list-title" className="space-y-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <h2 id="budgets-list-title" ref={listTitleRef} tabIndex={-1} className="text-xl font-bold text-slate-900 outline-none">
-                Tus presupuestos
-              </h2>
-              <FilterChips
-                label="Filtrar presupuestos por estado"
-                options={filterOptions}
-                value={filter}
-                onChange={setFilter}
-                chipClassName="px-2.5 sm:px-3"
-              />
-            </div>
-
-            {visible.length === 0 ? (
-              <EmptyState
-                icon={SearchX}
-                title={`Ningún presupuesto en estado ${activeFilterLabel ?? filter}`}
-                description={`En ${periodLabel} no hay presupuestos con ese estado.`}
-                action={
-                  <button type="button" onClick={() => setFilter(FILTER_ALL)} className={SECONDARY_BUTTON}>
-                    Ver todos
-                  </button>
-                }
-              />
-            ) : (
-              <ul className="grid gap-4 xl:grid-cols-2">
-                {visible.map((budget) => (
-                  <li key={budget.id} className="min-w-0">
-                    <BudgetCard
-                      budget={budget}
-                      phase={phase}
-                      movementsTo={{ pathname: '/app/movimientos', search: movementsSearch(search, budget.nombre) }}
-                      highlighted={highlightId === budget.id}
-                      busy={actions.pending?.type === 'delete' && actions.pending.id === budget.id}
-                      canMove={canRebalance}
-                      onEdit={(item) => setDialog({ type: 'form', budget: item })}
-                      onMove={openMoveFor}
-                      onDelete={handleDelete}
-                    />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          <BudgetList
+            items={items}
+            filter={filter}
+            onFilterChange={setFilter}
+            titleRef={listTitleRef}
+            periodLabel={periodLabel}
+            phase={phase}
+            search={search}
+            highlightId={highlightId}
+            pending={actions.pending}
+            canMove={canRebalance}
+            onEdit={(item) => setDialog({ type: 'form', budget: item })}
+            onMove={openMoveFor}
+            onDelete={handleDelete}
+          />
         </>
       )}
 
@@ -327,6 +205,210 @@ export default function BudgetsPage() {
   )
 }
 
+/**
+ * Presupuestos del mes anterior (solo con `enabled`): cuántos tenía y, si no hay nada que copiar,
+ * el motivo que explica el botón "Copiar de…" deshabilitado.
+ */
+function usePreviousMonth({ previousMonth, items, enabled, previousLabel, periodLabel }) {
+  const previous = useBudgets(previousMonth, { enabled })
+  const previousItems = useMemo(
+    () => (previous.status === 'ready' && previous.data ? (previous.data.categorias ?? []) : null),
+    [previous.status, previous.data],
+  )
+  const copyable = useMemo(() => copyableCount(previousItems, items), [previousItems, items])
+  const previousCount = previousItems?.length ?? null
+  return { previousCount, blockedReason: copyBlockedReason({ copyable, previousCount, previousLabel, periodLabel }) }
+}
+
+/** Navegación entre meses, fase del mes y acciones de la barra ("Copiar de…", "Mover saldo"). */
+function MonthToolbar({
+  period,
+  periodLabel,
+  previousLabel,
+  phase,
+  lastMonth,
+  onPeriodChange,
+  hasItems,
+  canRebalance,
+  copying,
+  copyBlockedReason,
+  onCopy,
+  onRebalance,
+}) {
+  const copyReasonId = useId()
+  const nextMonth = shiftMonth(period, 1)
+  const canGoNext = period < lastMonth
+  // "Copiar de…" y "Mover saldo" solo aplican a meses con presupuestos que no están cerrados.
+  const showActions = hasItems && phase !== 'past'
+
+  return (
+    <div className="rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <IconButton label={`Ir a ${previousLabel}`} onClick={() => onPeriodChange(shiftMonth(period, -1))}>
+            <ChevronLeft className="h-4 w-4" />
+          </IconButton>
+          <div className="min-w-0 flex-1 text-center md:flex-none md:text-left" aria-live="polite">
+            <p className="truncate text-lg font-semibold text-slate-900">{periodLabel}</p>
+            <span className={`mt-0.5 inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${PHASE_BADGE[phase].className}`}>
+              {PHASE_BADGE[phase].label}
+            </span>
+          </div>
+          <IconButton
+            label={canGoNext ? `Ir a ${monthLabel(nextMonth)}` : `Puedes planificar hasta ${monthLabel(lastMonth)}`}
+            onClick={() => onPeriodChange(nextMonth)}
+            disabled={!canGoNext}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </IconButton>
+        </div>
+
+        {showActions && (
+          <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap md:justify-end">
+            <button
+              type="button"
+              onClick={onCopy}
+              aria-disabled={copying || undefined}
+              disabled={Boolean(copyBlockedReason) && !copying}
+              aria-describedby={copyBlockedReason ? copyReasonId : undefined}
+              className={`${SECONDARY_BUTTON} disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 disabled:hover:bg-slate-50`}
+              title={copyBlockedReason ?? `Copia los presupuestos de ${previousLabel} que aún no tengas en ${periodLabel}`}
+            >
+              <Copy className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="truncate">{copying ? 'Copiando…' : `Copiar de ${previousLabel}`}</span>
+            </button>
+            {canRebalance && (
+              <button type="button" onClick={onRebalance} className={SECONDARY_BUTTON}>
+                <ArrowRightLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span className="truncate">Mover saldo</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      {showActions && copyBlockedReason && (
+        <p id={copyReasonId} className="mt-2 text-xs leading-5 text-slate-600 md:text-right">
+          {copyBlockedReason}
+        </p>
+      )}
+      {phase === 'past' && hasItems && (
+        <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+          Estás viendo un mes cerrado: sirve de referencia. Puedes corregir límites, pero las sugerencias y el rebalanceo solo aplican al mes en curso o a
+          los que planificas.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** Mes sin presupuestos: copiar los del mes anterior (si tenía o aún no se sabe) o crear uno. */
+function EmptyMonth({ periodLabel, previousLabel, previousCount, copying, onCopy, onCreate }) {
+  return (
+    <EmptyState
+      icon={Target}
+      title={`Aún no tienes presupuestos para ${periodLabel}`}
+      description={emptyMonthDescription(previousCount, previousLabel)}
+      action={
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:justify-center">
+          {previousCount !== 0 && (
+            <button type="button" onClick={onCopy} aria-disabled={copying || undefined} className={PRIMARY_BUTTON}>
+              <Copy className="h-4 w-4" aria-hidden="true" />
+              {copying ? 'Copiando…' : `Copiar presupuestos de ${previousLabel}`}
+            </button>
+          )}
+          <button type="button" onClick={onCreate} className={previousCount === 0 ? PRIMARY_BUTTON : SECONDARY_BUTTON}>
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Crear presupuesto
+          </button>
+        </div>
+      }
+      className="py-10"
+    />
+  )
+}
+
+/** "Tus presupuestos": filtro por estado y tarjetas del mes. */
+function BudgetList({
+  items,
+  filter,
+  onFilterChange,
+  titleRef,
+  periodLabel,
+  phase,
+  search,
+  highlightId,
+  pending,
+  canMove,
+  onEdit,
+  onMove,
+  onDelete,
+}) {
+  const counts = useMemo(() => {
+    const result = { [FILTER_ALL]: items.length }
+    for (const state of BUDGET_STATES) result[state.key] = 0
+    for (const item of items) result[stateOf(item)] = (result[stateOf(item)] ?? 0) + 1
+    return result
+  }, [items])
+
+  const filterOptions = [
+    { key: FILTER_ALL, label: <ChipLabel text="Todos" count={counts[FILTER_ALL]} /> },
+    ...BUDGET_STATES.map((state) => ({
+      key: state.key,
+      label: <ChipLabel text={state.label} count={counts[state.key]} dot={stylesFor(state.key).dot} />,
+    })),
+  ]
+  const visible = filter === FILTER_ALL ? items : items.filter((item) => stateOf(item) === filter)
+  const activeFilterLabel = BUDGET_STATES.find((state) => state.key === filter)?.label
+
+  return (
+    <section aria-labelledby="budgets-list-title" className="space-y-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <h2 id="budgets-list-title" ref={titleRef} tabIndex={-1} className="text-xl font-bold text-slate-900 outline-none">
+          Tus presupuestos
+        </h2>
+        <FilterChips
+          label="Filtrar presupuestos por estado"
+          options={filterOptions}
+          value={filter}
+          onChange={onFilterChange}
+          chipClassName="px-2.5 sm:px-3"
+        />
+      </div>
+
+      {visible.length === 0 ? (
+        <EmptyState
+          icon={SearchX}
+          title={`Ningún presupuesto en estado ${activeFilterLabel ?? filter}`}
+          description={`En ${periodLabel} no hay presupuestos con ese estado.`}
+          action={
+            <button type="button" onClick={() => onFilterChange(FILTER_ALL)} className={SECONDARY_BUTTON}>
+              Ver todos
+            </button>
+          }
+        />
+      ) : (
+        <ul className="grid gap-4 xl:grid-cols-2">
+          {visible.map((budget) => (
+            <li key={budget.id} className="min-w-0">
+              <BudgetCard
+                budget={budget}
+                phase={phase}
+                movementsTo={{ pathname: '/app/movimientos', search: movementsSearch(search, budget.nombre) }}
+                highlighted={highlightId === budget.id}
+                busy={pending?.type === 'delete' && pending.id === budget.id}
+                canMove={canMove}
+                onEdit={onEdit}
+                onMove={onMove}
+                onDelete={onDelete}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 function ChipLabel({ text, count, dot }) {
   return (
     <>
@@ -340,7 +422,7 @@ function ChipLabel({ text, count, dot }) {
 
 function BudgetsSkeleton() {
   return (
-    <div className="space-y-6" role="status" aria-label="Cargando presupuestos">
+    <output aria-label="Cargando presupuestos" className="block space-y-6">
       <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <div className="flex items-center gap-3">
           <Skeleton className="h-11 w-11 rounded-2xl" />
@@ -386,6 +468,6 @@ function BudgetsSkeleton() {
         ))}
       </div>
       <span className="sr-only">Cargando presupuestos</span>
-    </div>
+    </output>
   )
 }

@@ -2,7 +2,8 @@
  * Tarjeta de una sección de Configuración: ícono + título + descripción y el contenido.
  * Es `flex-col` para que, en la grilla de 2 columnas, los botones finales (`mt-auto`) queden alineados.
  */
-export default function SettingsCard({ id, icon: Icon, title, description, children, className = '' }) {
+export default function SettingsCard({ id, icon, title, description, children, className = '' }) {
+  const Icon = icon
   return (
     <section
       aria-labelledby={`${id}-title`}

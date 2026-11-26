@@ -126,6 +126,7 @@ function DropdownMenu({ id, label, items, triggerRef, onSelect, onClose }) {
       ref={menuRef}
       id={id}
       role="menu"
+      tabIndex={-1}
       aria-label={label}
       onKeyDown={handleKeyDown}
       data-placement={placement}

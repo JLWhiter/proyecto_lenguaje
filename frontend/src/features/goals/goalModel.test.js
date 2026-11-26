@@ -50,7 +50,7 @@ describe('progreso', () => {
   })
 
   it('muestra la marca esperada solo en metas en curso o atrasadas', () => {
-    expect(expectedMarker(goal())).toBe(71.9)
+    expect(expectedMarker(goal())).toBeCloseTo(71.9)
     expect(expectedMarker(goal({ estado: STATUS.IN_PROGRESS, porcentaje_esperado: 0 }))).toBe(0)
     expect(expectedMarker(goal({ estado: STATUS.REACHED }))).toBeNull()
     expect(expectedMarker(goal({ estado: STATUS.OVERDUE }))).toBeNull()
