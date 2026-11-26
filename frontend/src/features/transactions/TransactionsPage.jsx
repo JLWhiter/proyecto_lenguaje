@@ -129,7 +129,7 @@ export default function TransactionsPage() {
   const invalidate = useInvalidate()
   const toast = useToast()
   const confirm = useConfirm()
-  const { exportCsv, exporting } = useExportTransactions()
+  const { exportExcel, exporting } = useExportTransactions()
   const [dialog, setDialog] = useState(null)
   const [busyId, setBusyId] = useState(null)
 
@@ -352,7 +352,7 @@ export default function TransactionsPage() {
         </p>
         <button
           type="button"
-          onClick={() => exportCsv(filters.apiFilters)}
+          onClick={() => exportExcel(filters.apiFilters)}
           disabled={exporting || feed.status !== 'ready' || count === 0}
           className="inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
         >
@@ -361,7 +361,7 @@ export default function TransactionsPage() {
           ) : (
             <Download className="h-4 w-4" aria-hidden="true" />
           )}
-          {exporting ? 'Preparando…' : `Descargar CSV de ${periodPhrase}`}
+          {exporting ? 'Preparando Excel…' : `Descargar Excel de ${periodPhrase}`}
           {filters.hasFilters && <span className="sr-only"> (con los filtros aplicados)</span>}
         </button>
       </div>

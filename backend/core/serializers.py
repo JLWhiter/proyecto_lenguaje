@@ -14,6 +14,7 @@ MONEY_DIGITS = 12  # como los DecimalField de los modelos: hasta 9,999,999,999.9
 MONEY_DECIMALS = 2
 ACCOUNT_ICONS = ["credit", "piggy", "phone", "cash"]
 BUDGET_ICONS = ["shopping", "car", "home", "gamepad", "health"]
+EXPORT_FORMATS = ["xlsx", "csv"]
 
 
 def largest_amount(max_digits=MONEY_DIGITS, decimal_places=MONEY_DECIMALS):
@@ -132,6 +133,18 @@ class TransactionFilterSerializer(PeriodQuerySerializer):
 class TransactionListQuerySerializer(TransactionFilterSerializer):
     page = serializers.IntegerField(min_value=1, default=1)
     page_size = serializers.IntegerField(min_value=1, max_value=500, default=100)
+
+
+class TransactionExportQuerySerializer(TransactionFilterSerializer):
+    """Exportación: los filtros del listado más ``formato`` (xlsx o csv) y ``todo=1`` (todo el historial, sin ``mes``)."""
+
+    formato = serializers.ChoiceField(
+        choices=EXPORT_FORMATS,
+        allow_blank=True,
+        default="",
+        error_messages={"invalid_choice": "Formato no válido. Usa xlsx (Excel) o csv."},
+    )
+    todo = serializers.BooleanField(default=False, error_messages={"invalid": "Usa todo=1 para exportar todo el historial."})
 
 
 class IncomeTaxQuerySerializer(serializers.Serializer):

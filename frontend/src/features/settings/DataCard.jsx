@@ -18,8 +18,8 @@ export default function DataCard() {
       <div className="rounded-2xl bg-slate-50 p-4">
         <p className="font-semibold text-slate-800">Exportar movimientos</p>
         <p className="mt-1 text-sm leading-snug text-slate-500">
-          Descarga tus ingresos, gastos y transferencias de todas tus cuentas en un archivo CSV que puedes abrir en Excel o
-          Google Sheets.
+          Descarga tus ingresos, gastos y transferencias de todas tus cuentas en un Excel (.xlsx) con resumen por
+          categoría, gráficos y presupuestos. También se abre en Google Sheets.
         </p>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <button
@@ -30,7 +30,7 @@ export default function DataCard() {
             className={buttonStyles.primary}
           >
             <Download className="h-4 w-4 shrink-0" aria-hidden="true" />
-            {exporting === 'all' ? 'Preparando archivo…' : 'Descargar todo (CSV)'}
+            {exporting === 'all' ? 'Preparando Excel…' : 'Descargar todo el historial (Excel)'}
           </button>
           <button
             type="button"
@@ -39,7 +39,7 @@ export default function DataCard() {
             aria-busy={exporting === 'month' || undefined}
             className={buttonStyles.outline}
           >
-            {exporting === 'month' ? 'Preparando archivo…' : `Solo ${label}`}
+            {exporting === 'month' ? 'Preparando Excel…' : `Solo ${label} (Excel)`}
           </button>
         </div>
       </div>

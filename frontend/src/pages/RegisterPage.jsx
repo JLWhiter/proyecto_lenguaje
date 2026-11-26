@@ -383,7 +383,7 @@ export default function RegisterPage() {
             </span>
             <span className="inline-flex items-center gap-1.5">
               <CheckCircleIcon className="h-3.5 w-3.5 shrink-0 text-[#10B981]" />
-              Exporta tus movimientos en CSV
+              Exporta tus movimientos a Excel
             </span>
           </div>
           <p className="mt-5 text-center text-[10px] leading-relaxed text-[#64748B]">

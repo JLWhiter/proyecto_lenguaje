@@ -13,7 +13,7 @@ const CONTENT = {
     sections: [
       {
         heading: 'Qué ofrece Finova',
-        text: 'Finova te permite registrar cuentas y billeteras, anotar ingresos, gastos y transferencias, definir presupuestos mensuales por categoría, recibir alertas cuando un presupuesto se acerca a su límite o se detecta un gasto inusual, estimar tu Impuesto a la Renta y ver un resumen de tu situación financiera. También puedes exportar tus movimientos en formato CSV desde Configuración.',
+        text: 'Finova te permite registrar cuentas y billeteras, anotar ingresos, gastos y transferencias, definir presupuestos mensuales por categoría, recibir alertas cuando un presupuesto se acerca a su límite o se detecta un gasto inusual, estimar tu Impuesto a la Renta y ver un resumen de tu situación financiera. También puedes exportar tus movimientos a Excel (.xlsx) desde Configuración.',
       },
       {
         heading: 'Uso de la cuenta',
@@ -56,7 +56,7 @@ const CONTENT = {
       },
       {
         heading: 'Tus derechos',
-        text: 'Puedes corregir tu nombre y tu moneda principal desde Configuración y descargar tus movimientos en CSV cuando quieras. Para solicitar la eliminación de tu cuenta o de tus datos, comunícate con el equipo del proyecto.',
+        text: 'Puedes corregir tu nombre y tu moneda principal desde Configuración y descargar tus movimientos en Excel cuando quieras. Para solicitar la eliminación de tu cuenta o de tus datos, comunícate con el equipo del proyecto.',
       },
     ],
   },

@@ -12,13 +12,13 @@ from .alert_service import alerts_payload, apply_alert_action, ensure_alerts, re
 from .alerts import hours_text
 from .csv_export import movements_csv
 from .exceptions import FinanceError
+from .export_data import export_filename, export_movements, export_report
 from .finance import (
     accounts_payload,
     available_periods,
     budgets_payload,
     category_catalog,
     dashboard_payload,
-    filtered_movements,
     income_tax_payload,
     serialize_account,
     serialize_budgets,
@@ -28,7 +28,7 @@ from .finance import (
 )
 from .models import FinanceAccount, FinanceAlert, FinanceBudget, FinanceTransaction
 from .periods import local_today, period_label, period_of_moment
-from .renderers import CSVRenderer
+from .renderers import CSVRenderer, ExportNegotiation, XLSXRenderer, errors_as_json
 from .serializers import (
     AccountBalanceSerializer,
     AccountCreateSerializer,
@@ -45,12 +45,13 @@ from .serializers import (
     PeriodQuerySerializer,
     SnoozeAllSerializer,
     TransactionCreateSerializer,
-    TransactionFilterSerializer,
+    TransactionExportQuerySerializer,
     TransactionListQuerySerializer,
     TransactionUpdateSerializer,
     TransferSerializer,
 )
 from .taxes import uit_for_year
+from .xlsx_export import workbook_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -172,15 +173,35 @@ class DepositView(FinanceAPIView):
 
 
 class TransactionExportView(FinanceAPIView):
-    renderer_classes = [CSVRenderer]
+    """``GET /transacciones/exportar/?formato=xlsx|csv&mes=AAAA-MM&todo=1&tipo=&categoria=&cuenta_id=&search=``.
+
+    Excel (.xlsx) por defecto; CSV con ``formato=csv`` (o, sin ``formato``, con
+    ``Accept: text/csv``, como antes). ``todo=1`` exporta todo el historial e
+    ignora ``mes``. Nunca responde 406; los errores de un Excel llegan como JSON
+    y los de un CSV como filas "campo,mensaje".
+    """
+
+    renderer_classes = [XLSXRenderer, CSVRenderer]
+    content_negotiation_class = ExportNegotiation
 
     def get(self, request):
-        filters = self.validated(TransactionFilterSerializer, request.query_params)
-        filename = f"finova-transacciones-{filters['mes']}.csv"
+        filters = self.validated(TransactionExportQuerySerializer, request.query_params)
+        extension = request.accepted_renderer.format
+        items = export_movements(request.user, filters)
+        if extension == CSVRenderer.format:
+            content = movements_csv(items)
+        else:
+            content = workbook_bytes(export_report(request.user, filters, items, local_today()))
         return Response(
-            movements_csv(filtered_movements(request.user, filters)),
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            content,
+            headers={
+                "Content-Disposition": f'attachment; filename="{export_filename(filters, extension)}"',
+                "Cache-Control": "no-store",
+            },
         )
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        return errors_as_json(super().finalize_response(request, response, *args, **kwargs))
 
 
 class BudgetListView(FinanceAPIView):
