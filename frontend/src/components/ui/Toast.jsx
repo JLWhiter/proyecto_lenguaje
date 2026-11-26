@@ -80,10 +80,13 @@ function ToastItem({ toast, onDismiss }) {
 
   const tone = TONES[toast.tone] ?? TONES.info
   const Icon = tone.Icon
+  // Errores: role="alert" (se anuncian de inmediato). El resto: <output>, la región de estado nativa.
+  const isError = toast.tone === 'error'
+  const Live = isError ? 'div' : 'output'
 
   return (
-    <div
-      role={toast.tone === 'error' ? 'alert' : 'status'}
+    <Live
+      role={isError ? 'alert' : undefined}
       // Pausa al pasar el mouse (no en táctil: un tap no emite "leave" y el aviso no se cerraría nunca).
       onPointerEnter={(event) => event.pointerType === 'mouse' && setPaused(true)}
       onPointerLeave={(event) => event.pointerType === 'mouse' && setPaused(false)}
@@ -101,7 +104,7 @@ function ToastItem({ toast, onDismiss }) {
       >
         <X className="h-4 w-4" />
       </button>
-    </div>
+    </Live>
   )
 }
 

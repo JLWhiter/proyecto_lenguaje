@@ -174,6 +174,21 @@ export function AccountDialog({ onClose }) {
   return <AccountFormDialog onClose={onClose} />
 }
 
+/** Qué pasará al guardar: nada (mismo saldo) o un «Ajuste de saldo» por la diferencia. */
+function BalanceDifference({ difference, signedMoney }) {
+  if (difference === null) return <p className="text-slate-500">Ingresa el saldo que ves en tu banco, billetera o bolsillo.</p>
+  if (difference === 0) return <p className="text-slate-600">Es el mismo saldo registrado: no se creará ningún movimiento.</p>
+  return (
+    <p className="text-slate-700">
+      Se registrará un movimiento <strong className="font-semibold">«Ajuste de saldo»</strong> de{' '}
+      <strong className={`font-bold tabular-nums ${difference > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+        {signedMoney(difference)}
+      </strong>{' '}
+      en esta cuenta.
+    </p>
+  )
+}
+
 /**
  * Corrige el saldo de una cuenta al valor real. El backend registra la diferencia como un
  * movimiento "Ajuste de saldo"; aquí mostramos esa diferencia antes de guardar.
@@ -272,19 +287,7 @@ export function AccountBalanceDialog({ account, onClose }) {
         />
 
         <div aria-live="polite" className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm leading-6">
-          {difference === null ? (
-            <p className="text-slate-500">Ingresa el saldo que ves en tu banco, billetera o bolsillo.</p>
-          ) : difference === 0 ? (
-            <p className="text-slate-600">Es el mismo saldo registrado: no se creará ningún movimiento.</p>
-          ) : (
-            <p className="text-slate-700">
-              Se registrará un movimiento <strong className="font-semibold">«Ajuste de saldo»</strong> de{' '}
-              <strong className={`font-bold tabular-nums ${difference > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                {signedMoney(difference)}
-              </strong>{' '}
-              en esta cuenta.
-            </p>
-          )}
+          <BalanceDifference difference={difference} signedMoney={signedMoney} />
         </div>
 
         <Note>

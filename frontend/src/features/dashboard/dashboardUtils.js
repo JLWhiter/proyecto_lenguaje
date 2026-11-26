@@ -16,7 +16,7 @@ function toFiniteNumber(value) {
   if (value === null || value === undefined || value === '') return null
   if (typeof value === 'number') return Number.isFinite(value) ? value : null
   // '+1,292.6%' (texto del backend, con separador de miles) → 1292.6
-  const number = Number.parseFloat(String(value).replace('%', '').replace(/,/g, '').trim())
+  const number = Number.parseFloat(String(value).replace('%', '').replaceAll(',', '').trim())
   return Number.isFinite(number) ? number : null
 }
 
@@ -95,13 +95,16 @@ export function goalsLink(id) {
 const limaDay = new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' })
 const limaShortDay = new Intl.DateTimeFormat('es-PE', { timeZone: APP_TIME_ZONE, day: 'numeric', month: 'short' })
 
+/** 'Hoy', 'Ayer' o '24 nov.' para el día `day` (AAAA-MM-DD en Lima) de `date`. */
+function relativeDayText(day, now, date) {
+  if (day === limaDay.format(now)) return 'Hoy'
+  if (day === limaDay.format(new Date(now.getTime() - 24 * 60 * 60 * 1000))) return 'Ayer'
+  return limaShortDay.format(date)
+}
+
 /** Fecha de un movimiento en hora de Lima (24 horas): 'Hoy, 18:30', 'Ayer, …' o '24 nov., 11:00'. */
 export function movementWhen(occurredAt, now = new Date()) {
   const date = occurredAt ? new Date(occurredAt) : null
   if (!date || Number.isNaN(date.getTime())) return ''
-  const day = limaDay.format(date)
-  const today = limaDay.format(now)
-  const yesterday = limaDay.format(new Date(now.getTime() - 24 * 60 * 60 * 1000))
-  const dayText = day === today ? 'Hoy' : day === yesterday ? 'Ayer' : limaShortDay.format(date)
-  return `${dayText}, ${formatTime(date)}`
+  return `${relativeDayText(limaDay.format(date), now, date)}, ${formatTime(date)}`
 }

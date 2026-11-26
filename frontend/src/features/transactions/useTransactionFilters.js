@@ -6,11 +6,11 @@ export const SEARCH_DEBOUNCE_MS = 300
 
 // Parámetros propios de la pantalla. `mes` lo maneja PeriodContext (selector del header).
 const PARAMS = { tipo: 'tipo', categoria: 'categoria', cuenta: 'cuenta', search: 'q' }
-const TYPES = ['INGRESO', 'GASTO']
+const TYPES = new Set(['INGRESO', 'GASTO'])
 
 function normalizeType(value) {
   const upper = String(value || '').trim().toUpperCase()
-  return TYPES.includes(upper) ? upper : ''
+  return TYPES.has(upper) ? upper : ''
 }
 
 /**
@@ -54,19 +54,19 @@ export function useTransactionFilters() {
   )
 
   // --- Búsqueda con debounce --------------------------------------------------------------
-  const [searchText, setSearchTextState] = useState(search)
+  const [searchText, setSearchText] = useState(search)
   const [syncedSearch, setSyncedSearch] = useState(search)
   const timerRef = useRef(null)
 
   // La URL cambió por fuera (Limpiar filtros, atrás/adelante): el input la refleja.
   if (search !== syncedSearch) {
     setSyncedSearch(search)
-    if (searchText.trim() !== search) setSearchTextState(search)
+    if (searchText.trim() !== search) setSearchText(search)
   }
 
-  const setSearchText = useCallback(
+  const changeSearchText = useCallback(
     (value) => {
-      setSearchTextState(value)
+      setSearchText(value)
       window.clearTimeout(timerRef.current)
       timerRef.current = window.setTimeout(() => updateParams({ search: value }), SEARCH_DEBOUNCE_MS)
     },
@@ -88,7 +88,7 @@ export function useTransactionFilters() {
 
   const clearFilters = useCallback(() => {
     window.clearTimeout(timerRef.current)
-    setSearchTextState('')
+    setSearchText('')
     updateParams(Object.fromEntries(Object.keys(PARAMS).map((key) => [key, ''])))
   }, [updateParams])
 
@@ -120,7 +120,7 @@ export function useTransactionFilters() {
     search,
     searchText,
     searchPending: searchText.trim() !== search,
-    setSearchText,
+    setSearchText: changeSearchText,
     commitSearch,
     setFilter,
     clearFilters,

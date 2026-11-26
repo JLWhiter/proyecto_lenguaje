@@ -1,3 +1,6 @@
+import FieldMessage from './FieldMessage'
+import { fieldDescribedBy } from './feedback'
+
 export default function AuthInput({
   id,
   label,
@@ -10,7 +13,7 @@ export default function AuthInput({
   inputClassName = '',
   ...inputProps
 }) {
-  const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined
+  const describedBy = fieldDescribedBy(id, error, hint)
 
   return (
     <div className={className}>
@@ -45,15 +48,7 @@ export default function AuthInput({
         )}
       </div>
 
-      {error ? (
-        <p id={`${id}-error`} role="alert" className="mt-2 text-[12px] font-medium text-[#DC5A5A]">
-          {error}
-        </p>
-      ) : hint ? (
-        <p id={`${id}-hint`} className="mt-2 text-[12px] leading-relaxed text-[#64748B]">
-          {hint}
-        </p>
-      ) : null}
+      <FieldMessage id={id} error={error} hint={hint} />
     </div>
   )
 }

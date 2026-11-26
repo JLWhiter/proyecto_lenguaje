@@ -151,7 +151,8 @@ export default function TransactionFilters({ filters, categories, accounts, acco
           <p id={`${moreId}-label`} className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
             Categoría
           </p>
-          <div role="group" aria-labelledby={`${moreId}-label`} className="flex flex-wrap items-center gap-2">
+          {/* <fieldset> = grupo nativo; `min-w-auto` anula el mínimo "min-content" que el navegador le da. */}
+          <fieldset aria-labelledby={`${moreId}-label`} className="flex min-w-auto flex-wrap items-center gap-2">
             {categoryChips.map((chip) => {
               const active = chip.key === categoryValue
               return (
@@ -194,7 +195,7 @@ export default function TransactionFilters({ filters, categories, accounts, acco
                 </select>
               </div>
             )}
-          </div>
+          </fieldset>
         </div>
       </div>
 

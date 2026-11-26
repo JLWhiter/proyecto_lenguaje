@@ -28,10 +28,13 @@ const tones = {
 export default function Alert({ tone = 'info', title = null, children, className = '' }) {
   const style = tones[tone] ?? tones.info
   const Icon = style.Icon
+  // Error y espera: role="alert" (se anuncian de inmediato). Éxito e info: <output>, la región de estado nativa.
+  const urgent = tone === 'error' || tone === 'warning'
+  const Live = urgent ? 'div' : 'output'
 
   return (
-    <div
-      role={tone === 'error' || tone === 'warning' ? 'alert' : 'status'}
+    <Live
+      role={urgent ? 'alert' : undefined}
       className={`flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-[12.5px] leading-relaxed ${style.wrapper} ${className}`}
     >
       <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${style.icon}`} aria-hidden="true" />
@@ -39,6 +42,6 @@ export default function Alert({ tone = 'info', title = null, children, className
         {title && <p className="font-bold">{title}</p>}
         {children}
       </div>
-    </div>
+    </Live>
   )
 }

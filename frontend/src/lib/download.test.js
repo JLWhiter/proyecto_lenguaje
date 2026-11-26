@@ -21,7 +21,7 @@ describe('filenameFromDisposition', () => {
 
   it('devuelve solo el nombre, nunca una ruta', () => {
     expect(filenameFromDisposition('attachment; filename="../../etc/finova.xlsx"')).toBe('finova.xlsx')
-    expect(filenameFromDisposition('attachment; filename="C:\\temp\\finova.xlsx"')).toBe('finova.xlsx')
+    expect(filenameFromDisposition('attachment; filename="C:\\descargas\\finova.xlsx"')).toBe('finova.xlsx')
   })
 
   it('devuelve texto vacío si la cabecera no trae nombre', () => {

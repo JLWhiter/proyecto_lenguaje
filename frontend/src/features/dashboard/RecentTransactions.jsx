@@ -1,35 +1,8 @@
-import {
-  ArrowDownLeft,
-  ArrowRightLeft,
-  ArrowUpRight,
-  BriefcaseBusiness,
-  Car,
-  Gamepad2,
-  HeartPulse,
-  House,
-  Landmark,
-  Plus,
-  ShoppingCart,
-  SlidersHorizontal,
-} from 'lucide-react'
-import { toNumber } from '../../lib/format'
+import { Landmark, Plus } from 'lucide-react'
 import { monthPhrase } from '../../lib/period'
+import { amountTone, directionIcon, MOVEMENT_ICONS, movementTone } from '../transactions/movementStyle'
 import { Amount, CARD, CARD_TITLE, CardLink } from './DashboardBits'
 import { movementsLink, movementWhen } from './dashboardUtils'
-
-// Íconos que envía el backend en `icon` (por categoría o por clase de movimiento).
-const ICONS = {
-  shopping: ShoppingCart,
-  car: Car,
-  home: House,
-  health: HeartPulse,
-  gamepad: Gamepad2,
-  briefcase: BriefcaseBusiness,
-  income: ArrowDownLeft,
-  transfer: ArrowRightLeft,
-  adjust: SlidersHorizontal,
-  opening: Landmark,
-}
 
 const KINDS = {
   TRANSFER: { label: 'Transferencia', className: 'bg-sky-50 text-sky-700 ring-sky-200' },
@@ -40,22 +13,10 @@ const KINDS = {
 
 const sameText = (a, b) => String(a || '').trim().toLocaleLowerCase('es') === String(b || '').trim().toLocaleLowerCase('es')
 
-function isIncome(item) {
-  return item.tipo === 'INGRESO' || toNumber(item.monto) > 0
-}
-
 function MovementIcon({ item }) {
-  const Icon = item.kind === 'OPENING' ? Landmark : ICONS[item.icon] || (isIncome(item) ? ArrowDownLeft : ArrowUpRight)
-  const tone =
-    item.kind === 'TRANSFER'
-      ? 'bg-sky-50 text-sky-600'
-      : item.kind === 'ADJUSTMENT' || item.kind === 'OPENING'
-        ? 'bg-amber-50 text-amber-700'
-        : isIncome(item)
-          ? 'bg-emerald-50 text-emerald-600'
-          : 'bg-red-50 text-red-600'
+  const Icon = item.kind === 'OPENING' ? Landmark : MOVEMENT_ICONS[item.icon] || directionIcon(item)
   return (
-    <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${tone}`}>
+    <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${movementTone(item)}`}>
       <Icon className="h-5 w-5" aria-hidden="true" />
     </span>
   )
@@ -65,8 +26,6 @@ function MovementRow({ item }) {
   const kind = item.kind && item.kind !== 'REGULAR' ? KINDS[item.kind] ?? { label: item.kind_label, className: KINDS.OPENING.className } : null
   // En transferencias/depósitos la categoría suele repetir la clase ("Transferencia"): no se duplica.
   const showCategory = item.categoria && !(kind && (sameText(item.categoria, kind.label) || sameText(item.categoria, item.kind_label)))
-  const amount = toNumber(item.monto)
-  const amountTone = amount > 0 ? 'text-emerald-600' : amount < 0 ? 'text-red-600' : 'text-slate-600'
   const when = movementWhen(item.occurred_at) || [item.fecha, item.hora].filter(Boolean).join(', ')
 
   return (
@@ -91,7 +50,7 @@ function MovementRow({ item }) {
           </span>
         </div>
       </div>
-      <p className={`shrink-0 whitespace-nowrap text-right text-sm font-bold sm:text-base ${amountTone}`}>
+      <p className={`shrink-0 whitespace-nowrap text-right text-sm font-bold sm:text-base ${amountTone(item.monto)}`}>
         <Amount value={item.monto} signed />
       </p>
     </li>

@@ -33,3 +33,9 @@ export function allFieldMessages(error) {
   }
   return result
 }
+
+/** `aria-describedby` de un campo: su error (`<id>-error`) si lo hay; si no, su ayuda (`<id>-hint`). */
+export function fieldDescribedBy(id, error, hint) {
+  if (error) return `${id}-error`
+  return hint ? `${id}-hint` : undefined
+}

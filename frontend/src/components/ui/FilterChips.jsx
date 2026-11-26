@@ -16,7 +16,8 @@ const ACTIVE = {
  */
 export default function FilterChips({ options, value, onChange, label, tone = 'dark', className = '', chipClassName = '' }) {
   return (
-    <div role="group" aria-label={label} className={`flex flex-wrap items-center gap-2 ${className}`}>
+    // <fieldset> = grupo nativo. `min-w-auto` anula el `min-inline-size: min-content` que le da el navegador.
+    <fieldset aria-label={label} className={`flex min-w-auto flex-wrap items-center gap-2 ${className}`}>
       {options.map((option) => {
         const active = option.key === value
         return (
@@ -33,13 +34,32 @@ export default function FilterChips({ options, value, onChange, label, tone = 'd
           </button>
         )
       })}
-    </div>
+    </fieldset>
   )
 }
 
-/** "Todas (5)" → { key: 'Todas', count: 5 } · "Normal 3" → { key: 'Normal', count: 3 } */
+const LINE_BREAK = /[\n\r\u2028\u2029]/
+
+function isDigit(char) {
+  return char >= '0' && char <= '9'
+}
+
+/**
+ * "Todas (5)" → { key: 'Todas', count: 5 } · "Normal 3" → { key: 'Normal', count: 3 }
+ * Sin número al final → { key: texto, count: null }. Se recorre el texto desde el final
+ * (sin expresiones regulares con retroceso).
+ */
 export function parseCountLabel(text) {
-  const match = String(text).match(/^(.*?)\s*\(?(\d+)\)?\s*$/)
-  if (!match) return { key: String(text).trim(), count: null }
-  return { key: match[1].trim(), count: Number(match[2]) }
+  const raw = String(text)
+  const trimmed = raw.trimEnd()
+  const end = trimmed.endsWith(')') ? trimmed.length - 1 : trimmed.length
+  let start = end
+  while (start > 0 && isDigit(trimmed[start - 1])) start -= 1
+  if (start === end) return { key: raw.trim(), count: null }
+
+  const keyEnd = trimmed[start - 1] === '(' ? start - 1 : start
+  const key = trimmed.slice(0, keyEnd).trimEnd()
+  // Igual que antes: la etiqueta debe estar en una sola línea.
+  if (LINE_BREAK.test(key)) return { key: raw.trim(), count: null }
+  return { key: key.trim(), count: Number(trimmed.slice(start, end)) }
 }

@@ -106,11 +106,13 @@ function DropdownMenu({ id, label, items, triggerRef, onSelect, onClose }) {
   }
 
   return (
+    // tabIndex -1: el menú puede recibir el foco (p. ej. un clic en su borde) sin entrar en el orden de tabulación.
     <div
       ref={menuRef}
       id={id}
       role="menu"
       aria-label={label}
+      tabIndex={-1}
       onKeyDown={handleKeyDown}
       className={`absolute z-30 w-48 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10 ${
         placement.alignRight ? 'right-0' : 'left-0'
@@ -159,7 +161,8 @@ export function ActionSheet({ title, description, items, onClose }) {
                   </span>
                   <span className="text-sm font-semibold text-slate-700">{item.label}</span>
                 </div>
-                <div role="group" aria-labelledby={`${baseId}-${item.key}`} className="mt-2 grid grid-cols-3 gap-2 pl-[52px]">
+                {/* <fieldset> = grupo nativo; `min-w-auto` anula el mínimo "min-content" que le da el navegador. */}
+                <fieldset aria-labelledby={`${baseId}-${item.key}`} className="mt-2 grid min-w-auto grid-cols-3 gap-2 pl-[52px]">
                   {item.options.map((option) => (
                     <button
                       key={option.key}
@@ -171,7 +174,7 @@ export function ActionSheet({ title, description, items, onClose }) {
                       {option.label}
                     </button>
                   ))}
-                </div>
+                </fieldset>
               </li>
             )
           }

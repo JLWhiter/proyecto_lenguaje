@@ -128,7 +128,7 @@ export default function AlertCard({ alert, busy = false, focusOnMount = false, o
             {unread && (
               <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
                 <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true" />
-                Sin leer
+                <span>Sin leer</span>
               </span>
             )}
           </div>

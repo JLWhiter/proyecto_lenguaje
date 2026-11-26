@@ -23,7 +23,8 @@ export function SkeletonCard({ lines = 3, className = '' }) {
  */
 export function PageSkeleton({ stats = 3, blocks = 2, title = true, label = 'Cargando…' }) {
   return (
-    <div className="space-y-6" role="status" aria-label={label}>
+    // <output> = región de estado nativa (role="status"); `block` porque <output> es inline.
+    <output className="block space-y-6" aria-label={label}>
       {title && (
         <div className="space-y-2">
           <Skeleton className="h-4 w-28" />
@@ -44,6 +45,6 @@ export function PageSkeleton({ stats = 3, blocks = 2, title = true, label = 'Car
         <SkeletonCard key={index} lines={4} />
       ))}
       <span className="sr-only">{label}</span>
-    </div>
+    </output>
   )
 }

@@ -108,11 +108,13 @@ function DropdownMenu({ id, label, items, triggerRef, onSelect, onClose }) {
   }
 
   return (
+    // tabIndex -1: el menú puede recibir el foco (p. ej. un clic en su borde) sin entrar en el orden de tabulación.
     <div
       ref={menuRef}
       id={id}
       role="menu"
       aria-label={label}
+      tabIndex={-1}
       onKeyDown={handleKeyDown}
       className="absolute right-0 top-full z-30 mt-1 w-56 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10"
     >

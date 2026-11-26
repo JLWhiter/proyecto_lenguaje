@@ -94,7 +94,7 @@ function fallbackMessage(status) {
  */
 export function parseExportError(text, status) {
   const body = String(text || '')
-    .replace(/^﻿/, '')
+    .replace(/^\uFEFF/, '')
     .trim()
   const parsed = (body.startsWith('{') && jsonErrors(body)) || textErrors(body, status)
   const message = parsed.message || Object.values(parsed.fieldErrors)[0] || fallbackMessage(status)

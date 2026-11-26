@@ -23,7 +23,7 @@ function focusableIn(container) {
 const trapStack = []
 
 function handleDocumentKeyDown(event) {
-  const trap = trapStack[trapStack.length - 1]
+  const trap = trapStack.at(-1)
   if (!trap) return
   const { container, onEscapeRef } = trap
 
@@ -44,7 +44,7 @@ function handleDocumentKeyDown(event) {
     return
   }
   const first = items[0]
-  const last = items[items.length - 1]
+  const last = items.at(-1)
   const active = document.activeElement
   const inside = container.contains(active)
   if (!inside) {

@@ -13,7 +13,8 @@ const STATUS = {
   locked: { box: 'border-dashed border-slate-200 bg-slate-50', badge: 'bg-slate-200 text-slate-500', sr: 'disponible después del paso 1' },
 }
 
-function Step({ number, status, icon: Icon, title, children, action, note }) {
+function Step({ number, status, icon, title, children, action, note }) {
+  const Icon = icon
   const style = STATUS[status]
   return (
     // Móvil: tarjeta vertical. Tablet: fila (número · texto · acción). xl: 3 columnas.

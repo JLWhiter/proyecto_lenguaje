@@ -1,6 +1,6 @@
 // Kit de UI compartido. Importa desde aquí: `import { Modal, useToast } from '../../components/ui'`.
 export { default as Modal } from './Modal'
-export { default as FormDialog, FormField } from './FormDialog'
+export { default as FormDialog, FormDialogFooter, FormDialogPlaceholder, FormField } from './FormDialog'
 export { default as ConfirmDialog, ConfirmProvider, useConfirm } from './ConfirmDialog'
 export { ToastProvider, useToast } from './Toast'
 export { default as EmptyState } from './EmptyState'
