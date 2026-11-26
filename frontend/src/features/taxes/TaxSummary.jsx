@@ -1,7 +1,7 @@
 import { CalendarClock, CheckCircle2, Hourglass, Percent, Receipt } from 'lucide-react'
 import { formatPercent, toNumber } from '../../lib/format'
 import TaxAmount, { useAmountsHidden } from './TaxAmount'
-import { FIXED_DEDUCTION_UIT, resultMode, soles, splitDeductions } from './taxRules'
+import { FIXED_DEDUCTION_UIT, monthsCount, resultMode, soles, splitDeductions } from './taxRules'
 
 const MODE_BADGE = {
   simulated: { label: 'Simulación', className: 'bg-sky-50 text-sky-700' },
@@ -194,9 +194,7 @@ function grossDetail(result, mode) {
   if (mode === 'simulated') return 'Monto que ingresaste para simular'
   if (mode === 'projected') {
     const months = toNumber(result.meses_con_ingresos)
-    return months > 0
-      ? `Lo registrado en ${months} ${months === 1 ? 'mes' : 'meses'} con ingresos, llevado a 12 meses`
-      : 'Lo registrado hasta hoy, llevado a 12 meses'
+    return months > 0 ? `Lo registrado en ${monthsCount(months)} con ingresos, llevado a 12 meses` : 'Lo registrado hasta hoy, llevado a 12 meses'
   }
   if (mode === 'partial') return `Tus ingresos regulares de ${result.anio} hasta hoy (dato parcial)`
   return `Tus ingresos regulares de ${result.anio}`

@@ -10,7 +10,7 @@ from .tokens import email_verification_token_generator, password_reset_token_gen
 
 # Frontend routes (see frontend/src/App.jsx); both pages read `?uid=...&token=...`.
 VERIFY_EMAIL_PATH = "/verificar-email"
-PASSWORD_RESET_PATH = "/restablecer-contrasena"
+RESET_LINK_PATH = "/restablecer-contrasena"
 
 
 def email_delivery_configured():
@@ -29,11 +29,11 @@ def _uid(user):
 
 def user_from_uid(uidb64, **filters):
     """Return the user encoded in ``uidb64`` or ``None`` if it is invalid/unknown."""
-    User = get_user_model()
+    user_model = get_user_model()
     try:
         user_id = force_str(urlsafe_base64_decode(uidb64))
-        return User.objects.get(pk=user_id, **filters)
-    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        return user_model.objects.get(pk=user_id, **filters)
+    except (TypeError, ValueError, OverflowError, user_model.DoesNotExist):
         return None
 
 
@@ -47,7 +47,7 @@ def build_verification_url(user):
 
 
 def build_password_reset_url(user):
-    return _frontend_url(PASSWORD_RESET_PATH, user, password_reset_token_generator.make_token(user))
+    return _frontend_url(RESET_LINK_PATH, user, password_reset_token_generator.make_token(user))
 
 
 def send_verification_email(user):

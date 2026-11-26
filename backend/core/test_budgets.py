@@ -44,6 +44,19 @@ class ProjectionTests(unittest.TestCase):
         self.assertEqual(budget_detail(Decimal("-20"), Decimal("0"), "2026-10", TODAY), "Mes cerrado con S/ 20.00 de exceso.")
         self.assertEqual(budget_detail(Decimal("0"), Decimal("0"), "2026-12", TODAY), "El período aún no empieza.")
 
+    def test_detail_text_for_each_timing_across_years(self):
+        new_year = date(2027, 1, 15)
+        self.assertEqual(budget_detail(Decimal("0"), Decimal("0"), "2027-02", new_year), "El período aún no empieza.")
+        self.assertEqual(budget_detail(Decimal("10"), Decimal("620"), "2027-01", new_year), "Proyección a fin de mes: S/ 620.00")
+        self.assertEqual(budget_detail(Decimal("10"), Decimal("0"), "2026-12", new_year), "Mes cerrado con S/ 10.00 sin usar.")
+        self.assertEqual(budget_detail(Decimal("0"), Decimal("0"), "2026-12", new_year), "Mes cerrado con S/ 0.00 sin usar.")
+
+    def test_projection_across_years(self):
+        new_year = date(2027, 1, 15)
+        self.assertEqual(projected_spending(Decimal("80.00"), "2026-12", new_year), Decimal("80.00"))
+        self.assertEqual(projected_spending(Decimal("15.00"), "2027-01", new_year), Decimal("31.00"))
+        self.assertEqual(projected_spending(Decimal("5.00"), "2027-02", new_year), Decimal("0.00"))
+
     def test_detail_text_uses_the_user_currency(self):
         self.assertEqual(budget_detail(Decimal("50"), Decimal("1385"), "2026-11", TODAY, "USD"), "Proyección a fin de mes: $ 1,385.00")
         self.assertEqual(budget_detail(Decimal("-20"), Decimal("0"), "2026-10", TODAY, "EUR"), "Mes cerrado con € 20.00 de exceso.")

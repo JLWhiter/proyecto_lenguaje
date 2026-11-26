@@ -76,7 +76,7 @@ export default function ExpenseDonut({ data, period, canRegister, onRegisterExpe
                       <Cell key={item.name} fill={item.color || '#94a3b8'} />
                     ))}
                   </Pie>
-                  <Tooltip content={(props) => <DonutTooltip {...props} format={text} />} wrapperStyle={{ outline: 'none', zIndex: 10 }} />
+                  <Tooltip content={<DonutTooltip format={text} />} wrapperStyle={{ outline: 'none', zIndex: 10 }} />
                 </PieChart>
               </ResponsiveContainer>
             </div>

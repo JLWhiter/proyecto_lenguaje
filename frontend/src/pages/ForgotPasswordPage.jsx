@@ -10,6 +10,7 @@ import { ArrowLeftIcon, MailIcon } from '../components/icons'
 import { authService } from '../services/authService'
 import { fieldErrorsFromApi } from '../lib/api'
 import { isValidEmail } from '../lib/validation'
+import { emailError } from './authFieldErrors'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -45,13 +46,7 @@ export default function ForgotPasswordPage() {
     }
   }
 
-  const clientError =
-    fieldError ||
-    (touched && email.trim().length === 0
-      ? 'Ingresa tu correo electrónico.'
-      : touched && !emailValid
-        ? 'Ingresa un correo electrónico válido.'
-        : '')
+  const clientError = fieldError || emailError(email, touched)
 
   return (
     <div className="auth-page relative min-h-screen overflow-x-clip">
@@ -64,7 +59,7 @@ export default function ForgotPasswordPage() {
           <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/80 bg-white/70 shadow-sm">
             <ArrowLeftIcon className="h-4 w-4" />
           </span>
-          Volver al inicio de sesión
+          {' '}Volver al inicio de sesión
         </Link>
 
         <Brand tagline="Recupera el acceso de forma segura" />

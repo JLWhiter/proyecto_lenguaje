@@ -6,6 +6,8 @@ import { useBodyScrollLock, useFocusTrap } from '../../hooks/useFocusTrap'
 
 let openModals = 0
 
+const WIDTHS = { sm: 'sm:max-w-md', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl' }
+
 /** Mientras haya un modal abierto, el resto de la app (#root) queda inerte para teclado y lectores. */
 function useInertRoot(active) {
   useEffect(() => {
@@ -48,25 +50,31 @@ export default function Modal({
   useBodyScrollLock(true)
   useFocusTrap(panelRef, { active: true, initialFocusRef, onEscape: onClose })
 
-  const width = size === 'sm' ? 'sm:max-w-md' : size === 'lg' ? 'sm:max-w-2xl' : 'sm:max-w-lg'
+  const width = WIDTHS[size] ?? WIDTHS.md
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-4"
-      onMouseDown={(event) => {
-        if (closeOnBackdrop && event.target === event.currentTarget) onClose?.()
-      }}
-    >
-      <section
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      {/* Fondo: un clic fuera del panel cierra. Para teclado y lectores ya están Escape y el botón "Cerrar". */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 -z-10"
+        onMouseDown={closeOnBackdrop ? () => onClose?.() : undefined}
+      />
+      {/*
+        <dialog open> (no showModal()): el foco atrapado, Escape y el fondo inerte los maneja este componente.
+        `static h-auto text-inherit` anulan la posición absoluta, el alto "fit-content" y el color que el
+        navegador da a <dialog>: el panel se ve igual que un bloque normal.
+      */}
+      <dialog
+        open
         ref={panelRef}
-        role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
-        className={`flex max-h-[92svh] w-full flex-col overflow-hidden rounded-t-[24px] bg-white shadow-2xl outline-none sm:rounded-[24px] ${width}`}
+        className={`static flex h-auto max-h-[92svh] w-full flex-col overflow-hidden rounded-t-[24px] bg-white text-inherit shadow-2xl outline-none sm:rounded-[24px] ${width}`}
       >
-        <header className="flex items-start justify-between gap-4 px-5 pt-5 sm:px-6 sm:pt-6">
+        <div className="flex items-start justify-between gap-4 px-5 pt-5 sm:px-6 sm:pt-6">
           <div className="min-w-0">
             <h2 id={titleId} className="text-xl font-bold text-slate-900">
               {title}
@@ -80,16 +88,16 @@ export default function Modal({
           <IconButton label="Cerrar" variant="soft" onClick={onClose}>
             <X className="h-4 w-4" />
           </IconButton>
-        </header>
+        </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">{children}</div>
 
         {footer && (
-          <footer className="border-t border-slate-100 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 sm:px-6 sm:pb-5">
+          <div className="border-t border-slate-100 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 sm:px-6 sm:pb-5">
             {footer}
-          </footer>
+          </div>
         )}
-      </section>
+      </dialog>
     </div>,
     document.body,
   )

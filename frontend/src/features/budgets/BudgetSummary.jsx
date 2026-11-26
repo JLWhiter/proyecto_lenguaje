@@ -101,6 +101,13 @@ function DaysLeft({ phase, days }) {
   )
 }
 
+/** Color del aviso de proyección: rojo si se pasaría, ámbar desde el 90 % y verde en el resto. */
+function projectionTone(overBy, ratio) {
+  if (overBy > 0) return 'border-red-200 bg-red-50 text-red-800'
+  if (ratio >= 90) return 'border-amber-200 bg-amber-50 text-amber-900'
+  return 'border-emerald-200 bg-emerald-50 text-emerald-800'
+}
+
 /** Proyección al cierre del mes en curso frente al total asignado. */
 function ProjectionLine({ summary }) {
   const { money } = useMoney()
@@ -111,8 +118,7 @@ function ProjectionLine({ summary }) {
 
   const ratio = (projected / limit) * 100
   const overBy = projected - limit
-  const tone =
-    overBy > 0 ? 'border-red-200 bg-red-50 text-red-800' : ratio >= 90 ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+  const tone = projectionTone(overBy, ratio)
   const Icon = overBy > 0 ? TrendingUp : TrendingDown
 
   let text

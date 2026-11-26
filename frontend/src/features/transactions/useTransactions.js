@@ -136,7 +136,7 @@ export function useTransactionFeed(filters) {
 
   const loadMore = useCallback(() => {
     const snapshot = stateRef.current
-    const last = snapshot.pages[snapshot.pages.length - 1]
+    const last = snapshot.pages.at(-1)
     if (snapshot.status !== 'ready' || snapshot.loadingMore || snapshot.refreshing || !last || last.page >= last.pages) return
 
     const controller = new AbortController()
@@ -163,7 +163,7 @@ export function useTransactionFeed(filters) {
   const stale = current.status === 'loading' && current.pages.length === 0 && Boolean(current.previous?.length)
   const shown = stale ? current.previous : current.pages
   const merged = useMemo(() => mergePages(shown), [shown])
-  const last = shown[shown.length - 1]
+  const last = shown.at(-1)
 
   return {
     status: stale ? 'ready' : current.status,

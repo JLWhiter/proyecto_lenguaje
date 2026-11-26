@@ -7,4 +7,5 @@ urlpatterns = [
     path("api/health/", health, name="legacy-health"),
     path("api/v1/auth/", include("accounts.urls")),
     path("api/v1/", include("core.urls")),
+    path("api/v1/", include("goals.urls")),
 ]

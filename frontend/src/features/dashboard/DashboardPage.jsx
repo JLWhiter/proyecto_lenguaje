@@ -15,6 +15,7 @@ import BalanceCard from './BalanceCard'
 import BalanceChart from './BalanceChart'
 import DashboardSkeleton from './DashboardSkeleton'
 import ExpenseDonut from './ExpenseDonut'
+import GoalsCard from './GoalsCard'
 import OnboardingCard from './OnboardingCard'
 import RecentTransactions from './RecentTransactions'
 import { BudgetCard, FlowCard } from './SummaryCards'
@@ -52,7 +53,7 @@ export default function DashboardPage() {
   const { period, search, defaultPeriod, label } = usePeriod()
   const dashboard = useDashboard(period)
   const accounts = useAccounts()
-  const { exportCsv, exporting } = useExportTransactions()
+  const { exportExcel, exporting } = useExportTransactions()
   const [dialog, setDialog] = useState(null)
   const [welcome, dismissWelcome] = useWelcomeNotice()
 
@@ -97,9 +98,9 @@ export default function DashboardPage() {
             <ListOrdered className="h-4 w-4 text-slate-500" aria-hidden="true" />
             Ver movimientos
           </Link>
-          <button type="button" onClick={() => exportCsv({ mes: period })} disabled={exporting} className={SECONDARY_BUTTON}>
+          <button type="button" onClick={() => exportExcel({ mes: period })} disabled={exporting} className={SECONDARY_BUTTON}>
             <Download className="h-4 w-4 text-emerald-600" aria-hidden="true" />
-            {exporting ? 'Exportando…' : 'Exportar CSV'}
+            {exporting ? 'Exportando…' : 'Exportar Excel'}
             <span className="sr-only"> de {monthPhrase(period)}</span>
           </button>
         </div>
@@ -162,6 +163,7 @@ export default function DashboardPage() {
         </div>
 
         <AlertsCard data={data} period={period} search={search} />
+        <GoalsCard />
 
         <div className="grid gap-5 md:grid-cols-2">
           <BalanceChart data={data} />

@@ -14,15 +14,21 @@ mensuales, recibir alertas automáticas y estimar el Impuesto a la Renta.
 | Pantalla | Ruta | Qué permite |
 | --- | --- | --- |
 | Resumen | `/app` | Saldo total, ingresos y gastos del mes con su variación, evolución del saldo, distribución de gastos, alertas activas y últimos movimientos |
-| Movimientos | `/app/movimientos` | Registrar, editar y eliminar ingresos y gastos; transferencias y depósitos; filtros por tipo, categoría, cuenta y texto; exportar a CSV |
+| Movimientos | `/app/movimientos` | Registrar, editar y eliminar ingresos y gastos; transferencias y depósitos; filtros por tipo, categoría, cuenta y texto; exportar a Excel |
 | Presupuestos | `/app/presupuestos` | Límites mensuales por categoría, proyección a fin de mes, análisis con sugerencia de rebalanceo y copia del mes anterior |
+| Metas | `/app/metas` | Metas de ahorro con monto y fecha objetivo, aportes y retiros, progreso frente a lo esperado, ahorro mensual necesario y fecha estimada |
 | Cuentas | `/app/cuentas` | Crear, editar, archivar y eliminar cuentas; actualizar saldo; patrimonio total |
 | Impuestos | `/app/impuestos` | Estimación del Impuesto a la Renta de quinta categoría por año, con detalle por tramos |
-| Alertas | `/app/alertas` | Alertas automáticas de presupuesto, ritmo de gasto, gastos inusuales y balance mensual |
-| Configuración | `/app/configuracion` | Perfil y moneda, cambio de contraseña, cierre de sesión en todos los dispositivos, preferencias y exportación |
+| Alertas | `/app/alertas` | Alertas automáticas de presupuesto, ritmo de gasto, gastos inusuales, balance mensual y metas atrasadas o alcanzadas |
+| Configuración | `/app/configuracion` | Perfil y moneda, cambio de contraseña, cierre de sesión en todos los dispositivos, preferencias y descarga del historial completo en Excel |
 
 El período seleccionado viaja en la URL (`?mes=AAAA-MM`) y por defecto es el mes
 actual en hora de Lima.
+
+La exportación genera un Excel (`.xlsx`) con las hojas Movimientos (tabla con
+filtros, montos en la moneda del usuario y totales), Resumen (tarjetas y gráfico de
+gastos por categoría; con el historial completo, también la evolución mensual) y
+Presupuestos (semáforo de uso).
 
 ## Cómo cumple la propuesta
 
@@ -35,12 +41,12 @@ actual en hora de Lima.
 | Gráfico de líneas con la evolución del saldo | Pantalla Resumen (`frontend/src/features/dashboard/BalanceChart.jsx`) con datos de `analytics.dashboard_charts` |
 | `unittest` para que los impuestos sean exactos | `backend/core/test_taxes.py` sobre `backend/core/taxes.py` |
 
-Las pruebas de lógica pura (impuestos, filtros, análisis, alertas, presupuestos y
-períodos) usan `unittest.TestCase` y corren sin Django:
+Las pruebas de lógica pura (impuestos, filtros, análisis, alertas, presupuestos,
+períodos, categorías, Excel y metas) usan `unittest.TestCase` y corren sin Django:
 
 ```powershell
 cd backend
-.\.venv\Scripts\python.exe -m unittest core.test_taxes core.test_transaction_filters core.test_analytics core.test_alerts core.test_budgets core.test_periods
+.\.venv\Scripts\python.exe -m unittest core.test_taxes core.test_transaction_filters core.test_analytics core.test_alerts core.test_budgets core.test_periods core.test_categories core.test_xlsx_export goals.test_planning
 ```
 
 ## Documentación
@@ -70,11 +76,14 @@ La API queda disponible en `http://127.0.0.1:8000/api/health/`.
 ### Datos de demostración
 
 Crea (o reinicia con `--reset`) un usuario con 3 cuentas, unos 190 movimientos de
-los últimos 6 meses, presupuestos del mes actual y alertas:
+los últimos 6 meses, presupuestos del mes actual, 2 metas de ahorro y alertas:
 
 ```powershell
 python manage.py seed_demo --email demo@finova.local --password "Demo#2026" --reset
 ```
+
+Si se omite `--password` para un usuario nuevo, se genera una contraseña al azar y
+se muestra una sola vez en la consola.
 
 Sin `--reset` el comando no toca un usuario que ya tenga datos. Solo modifica al
 usuario indicado.
@@ -144,7 +153,8 @@ peticiones que modifican datos envían el token CSRF en el encabezado `X-CSRFTok
 | --- | --- |
 | Autenticación | `auth/csrf/`, `register/`, `login/`, `logout/`, `logout-all/`, `session/`, `me/` (GET/PATCH), `password-change/`, `password-reset/`, `password-reset/confirm/`, `verify-email/`, `verify-email/resend/` |
 | Resumen | `dashboard/resumen/?mes=` |
-| Movimientos | `transacciones/` (GET con filtros y paginación, POST), `transacciones/<id>/` (PATCH, DELETE), `transacciones/transferir/`, `transacciones/depositar/`, `transacciones/exportar/` (CSV) |
+| Movimientos | `transacciones/` (GET con filtros y paginación, POST), `transacciones/<id>/` (PATCH, DELETE), `transacciones/transferir/`, `transacciones/depositar/`, `transacciones/exportar/?formato=xlsx\|csv&todo=1` (Excel por defecto) |
+| Metas | `metas/` (GET, POST), `metas/<id>/` (GET, PATCH, DELETE), `metas/<id>/aportes/` (POST), `metas/<id>/aportes/<id>/` (DELETE) |
 | Presupuestos | `presupuestos/` (GET, POST), `presupuestos/<id>/` (PATCH, DELETE), `presupuestos/copiar/`, `presupuestos/rebalancear/` |
 | Cuentas | `cuentas/` (GET, POST), `cuentas/<id>/` (PATCH, DELETE), `cuentas/<id>/saldo/` |
 | Alertas | `alertas/?estado=&tipo=`, `alertas/<id>/accion/`, `alertas/silenciar-todo/` |
@@ -155,19 +165,21 @@ Errores: las reglas de negocio responden `400 {"detail": "..."}` y las validacio
 
 ## Pruebas
 
-Backend (347 pruebas):
+Backend (443 pruebas):
 
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe manage.py test
 ```
 
-Frontend (67 pruebas con Vitest sobre formato, validaciones, períodos, presupuestos,
-impuestos y movimientos):
+Frontend (180 pruebas con Vitest sobre formato, validaciones, períodos, presupuestos,
+impuestos, movimientos, metas, la API y componentes) y ESLint con las reglas de
+SonarJS y accesibilidad que usa SonarCloud:
 
 ```powershell
 cd frontend
 npm test
+npm run lint
 npm run build
 ```
 
@@ -190,12 +202,14 @@ backend/
     alerts.py        Reglas de alertas (puras) y alert_service.py (sincronización)
     budgets.py       Proyección y estado de presupuestos
     taxes.py         Impuesto a la Renta
+    xlsx_export.py   Libro de Excel de la exportación (openpyxl)
     management/commands/seed_demo.py
+  goals/             Metas de ahorro: modelos, API y planning.py (progreso y fecha estimada con NumPy)
 frontend/src/
   App.jsx            Rutas
   layouts/           Header, menú lateral, barra inferior, selector de período
   features/          Una carpeta por pantalla: dashboard, transactions, budgets,
-                     accounts, alerts, settings, taxes
+                     goals, accounts, alerts, settings, taxes
   components/ui/     Modal, formularios, confirmaciones, avisos, estados vacíos
   context/           Sesión, período, preferencias y recarga de datos
   lib/api/           Cliente de la API por recurso

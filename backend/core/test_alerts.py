@@ -278,7 +278,7 @@ class ReconcileTests(unittest.TestCase):
         higher = reconcile([stored], [threshold("92.00")], "2026-11", NOW)
 
         self.assertEqual((same.create, same.update, same.delete), ((), (), ()))
-        self.assertEqual(higher.update[0][1]["dismissed"], False)
+        self.assertFalse(higher.update[0][1]["dismissed"])
 
     def test_an_expense_that_changed_month_keeps_its_alert(self):
         moved = stored_from(threshold("80.00"), period="2026-10")

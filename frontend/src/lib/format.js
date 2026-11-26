@@ -111,8 +111,10 @@ function formatWith(value, options) {
   return new Intl.DateTimeFormat(LOCALE, { timeZone: APP_TIME_ZONE, ...options }).format(date)
 }
 
+const LONG_DATE = { day: 'numeric', month: 'long', year: 'numeric' }
+
 /** '25 de noviembre de 2026' */
-export function formatDate(value, options = { day: 'numeric', month: 'long', year: 'numeric' }) {
+export function formatDate(value, options = LONG_DATE) {
   return formatWith(value, options)
 }
 
@@ -139,6 +141,6 @@ export function initialsOf(fullName, fallback = '') {
   const words = String(fullName || '').trim().split(/\s+/).filter(Boolean)
   if (words.length === 0) return (String(fallback).trim()[0] || '?').toUpperCase()
   const first = words[0][0]
-  const last = words.length > 1 ? words[words.length - 1][0] : ''
+  const last = words.length > 1 ? words.at(-1)[0] : ''
   return `${first}${last}`.toUpperCase()
 }

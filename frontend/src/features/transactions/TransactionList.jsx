@@ -1,38 +1,9 @@
-import {
-  ArrowDownLeft,
-  ArrowRightLeft,
-  ArrowUpRight,
-  BriefcaseBusiness,
-  Car,
-  ChevronRight,
-  Gamepad2,
-  HeartPulse,
-  House,
-  Landmark,
-  Pencil,
-  ShoppingCart,
-  SlidersHorizontal,
-  Trash2,
-} from 'lucide-react'
+import { ChevronRight, Landmark, Pencil, Trash2 } from 'lucide-react'
 import { IconButton, Modal } from '../../components/ui'
-import { toNumber } from '../../lib/format'
 import { formatLongDay } from './dates'
 import { Amount } from './Money'
+import { amountTone, directionIcon, MOVEMENT_ICONS, movementTone } from './movementStyle'
 import { useVisibleMoney } from './useVisibleMoney'
-
-// Íconos que envía el backend en `icon` (shopping, car, home, health, gamepad, briefcase, income, transfer, adjust).
-const ICONS = {
-  shopping: ShoppingCart,
-  car: Car,
-  home: House,
-  health: HeartPulse,
-  gamepad: Gamepad2,
-  briefcase: BriefcaseBusiness,
-  income: ArrowDownLeft,
-  transfer: ArrowRightLeft,
-  adjust: SlidersHorizontal,
-  opening: Landmark,
-}
 
 export const KIND_LABELS = {
   TRANSFER: 'Transferencia',
@@ -48,23 +19,11 @@ const KIND_STYLES = {
   OPENING: 'bg-slate-100 text-slate-700 ring-slate-200',
 }
 
-function isIncome(item) {
-  return item.tipo === 'INGRESO' || toNumber(item.monto) > 0
-}
-
 /** Ícono del movimiento según `icon`; si no se reconoce, uno genérico según sea ingreso o gasto. */
-export function MovementIcon({ item, className = "h-10 w-10 sm:h-11 sm:w-11" }) {
-  const Icon = ICONS[item.icon] || (item.kind === 'OPENING' ? Landmark : isIncome(item) ? ArrowDownLeft : ArrowUpRight)
-  const tone =
-    item.kind === 'TRANSFER'
-      ? 'bg-sky-50 text-sky-600'
-      : item.kind === 'ADJUSTMENT' || item.kind === 'OPENING'
-        ? 'bg-amber-50 text-amber-700'
-        : isIncome(item)
-          ? 'bg-emerald-50 text-emerald-600'
-          : 'bg-red-50 text-red-600'
+export function MovementIcon({ item, className = 'h-10 w-10 sm:h-11 sm:w-11' }) {
+  const Icon = MOVEMENT_ICONS[item.icon] || (item.kind === 'OPENING' ? Landmark : directionIcon(item))
   return (
-    <span className={`flex shrink-0 items-center justify-center rounded-2xl ${tone} ${className}`}>
+    <span className={`flex shrink-0 items-center justify-center rounded-2xl ${movementTone(item)} ${className}`}>
       <Icon className="h-5 w-5" aria-hidden="true" />
     </span>
   )
@@ -94,11 +53,6 @@ function CategoryBadge({ item }) {
       {item.categoria}
     </span>
   )
-}
-
-function amountTone(value) {
-  const number = toNumber(value)
-  return number > 0 ? 'text-emerald-600' : number < 0 ? 'text-red-600' : 'text-slate-600'
 }
 
 function MovementRow({ item, busy, highlighted, onOpen, onEdit, onDelete }) {
@@ -172,7 +126,6 @@ function MovementRow({ item, busy, highlighted, onOpen, onEdit, onDelete }) {
  *   Cada fila lleva `data-movement-id` para poder desplazarse hasta ella.
  */
 export default function TransactionList({ groups, onOpen, onEdit, onDelete, busyId, highlightId = null }) {
-
   return (
     <div className="space-y-4">
       {groups.map((group) => (

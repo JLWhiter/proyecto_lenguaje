@@ -6,17 +6,19 @@ export function isValidEmail(value) {
 
 export function passwordChecks(password) {
   const minLength = password.length >= 8
-  const hasNumberOrSymbol = /[\d]/.test(password) || /[^A-Za-z0-9]/.test(password)
+  const hasNumberOrSymbol = /\d/.test(password) || /[^A-Za-z0-9]/.test(password)
   const hasMixedCase = /[a-z]/.test(password) && /[A-Z]/.test(password)
   const strong = password.length >= 12 && hasMixedCase && hasNumberOrSymbol
 
   const score = Number(minLength) + Number(hasNumberOrSymbol) + Number(strong)
-  let label = ''
-  if (password.length > 0) {
-    label = score >= 2 ? 'Segura' : score === 1 ? 'Débil' : 'Muy débil'
-  }
+  const label = password.length > 0 ? strengthLabel(score) : ''
 
   return { minLength, hasNumberOrSymbol, hasMixedCase, strong, score, label }
+}
+
+function strengthLabel(score) {
+  if (score >= 2) return 'Segura'
+  return score === 1 ? 'Débil' : 'Muy débil'
 }
 
 export function isStrongPassword(password) {

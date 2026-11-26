@@ -42,7 +42,7 @@ export function resultMode(result) {
  *   (o todavía no tiene los campos nuevos). `knownProjection` cubre una respuesta sin `ingreso_proyectado`.
  */
 export function yearProgress(result, knownProjection = null) {
-  if (!result || result.fuente !== 'movimientos' || resultMode(result) === 'registered') return null
+  if (result?.fuente !== 'movimientos' || resultMode(result) === 'registered') return null
   const apiProjection = result.ingreso_proyectado
   const projected = apiProjection === null || apiProjection === undefined ? knownProjection : toNumber(apiProjection)
   const months = toNumber(result.meses_con_ingresos)
@@ -95,7 +95,7 @@ export function parseAmount(input) {
     .replace(/[\s,]/g, '')
   if (raw === '') return { empty: true, value: null }
   if (raw.startsWith('-')) return { error: 'El monto no puede ser negativo.', value: null }
-  if (!/^\d*\.?\d*$/.test(raw) || raw === '.') return { error: 'Ingresa solo números, por ejemplo 60000 o 60,000.50.', value: null }
+  if (!/^\d*(?:\.\d*)?$/.test(raw) || raw === '.') return { error: 'Ingresa solo números, por ejemplo 60000 o 60,000.50.', value: null }
   const [integer, decimals = ''] = raw.split('.')
   if (decimals.length > 2) return { error: 'Usa como máximo 2 decimales.', value: null }
   if (integer.replace(/^0+/, '').length > MAX_INTEGER_DIGITS) return { error: 'El monto es demasiado grande.', value: null }
@@ -117,6 +117,23 @@ export function parseYear(value) {
   return /^\d{4}$/.test(String(value ?? '')) ? Number(value) : null
 }
 
+/** '1 mes' · '3 meses' */
+export function monthsCount(months) {
+  return months === 1 ? '1 mes' : `${months} meses`
+}
+
+/** Tope del tramo en soles (`null` = sin tope): el de la API o, sin ella, el de la escala local. */
+function bracketLimit(bracket, api, uit) {
+  if (api) return api.hasta === null || api.hasta === undefined ? null : toNumber(api.hasta)
+  return bracket.to === null ? null : bracket.to * uit
+}
+
+/** Cuánto del tramo (0–1) ocupa la renta neta: 0 si no se alcanzó; 1 en el último tramo (sin tope) si se alcanzó. */
+function bracketFill(base, size) {
+  if (base <= 0) return 0
+  return size ? Math.min(1, base / size) : 1
+}
+
 /**
  * Los cinco tramos, alcanzados o no, combinando la escala local con `tramos` de la API.
  * `fill` (0–1) es cuánto del tramo ocupa la renta neta; en el último tramo es 1 si se alcanzó.
@@ -127,7 +144,7 @@ export function buildBrackets(result) {
   return BRACKETS.map((bracket, index) => {
     const api = apiBrackets[index]
     const desde = api ? toNumber(api.desde) : bracket.from * uit
-    const hasta = api ? (api.hasta === null || api.hasta === undefined ? null : toNumber(api.hasta)) : bracket.to === null ? null : bracket.to * uit
+    const hasta = bracketLimit(bracket, api, uit)
     const base = api ? toNumber(api.base) : 0
     const size = hasta === null ? null : hasta - desde
     return {
@@ -139,7 +156,7 @@ export function buildBrackets(result) {
       base,
       impuesto: api ? toNumber(api.impuesto) : 0,
       reached: base > 0,
-      fill: base <= 0 ? 0 : size ? Math.min(1, base / size) : 1,
+      fill: bracketFill(base, size),
     }
   })
 }

@@ -88,8 +88,8 @@ function PasswordChangeForm({ onChanged }) {
 
   // Solo usa refs (estables), por eso el efecto puede llamarla sin listarla como dependencia.
   function focusField(field) {
-    const ref = field === 'current' ? currentRef : field === 'next' ? nextRef : field === 'confirm' ? confirmRef : null
-    ref?.current?.focus()
+    const refs = { current: currentRef, next: nextRef, confirm: confirmRef }
+    refs[field]?.current?.focus()
   }
 
   useEffect(() => {
@@ -97,7 +97,6 @@ function PasswordChangeForm({ onChanged }) {
     const field = pendingFocus.current
     pendingFocus.current = null
     focusField(field)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saving])
 
   const local = clientErrors(form)

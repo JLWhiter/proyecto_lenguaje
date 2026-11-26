@@ -1,9 +1,8 @@
 from decimal import Decimal
 
-from .models import FinanceAccount, FinanceTransaction
+from .models import FinanceAccount, FinanceTransaction, MovementKind
 from .testing import API, FinanceAPITestCase
 
-Kind = FinanceTransaction.Kind
 
 
 class AccountCreationTests(FinanceAPITestCase):
@@ -18,7 +17,7 @@ class AccountCreationTests(FinanceAPITestCase):
         account = FinanceAccount.objects.get(pk=response.data["data"]["id"])
         self.assertEqual(account.balance, Decimal("125.00"))
         opening = account.transactions.get()
-        self.assertEqual((opening.kind, opening.transaction_type, opening.amount), (Kind.OPENING, "INGRESO", Decimal("125.00")))
+        self.assertEqual((opening.kind, opening.transaction_type, opening.amount), (MovementKind.OPENING, "INGRESO", Decimal("125.00")))
         dashboard = self.client.get(f"{API}/dashboard/resumen/").data
         self.assertEqual(dashboard["ingresos_mensuales"], Decimal("0.00"))
         self.assertEqual(dashboard["evolucion_saldo"][-1]["value"], 125.0)
@@ -52,7 +51,7 @@ class AccountBalanceTests(FinanceAPITestCase):
         self.assertEqual((up.status_code, up.data["data"]["saldo"]), (200, Decimal("130.00")))
         self.assertEqual(up.data["movimiento"]["monto"], Decimal("30.00"))
         self.assertEqual(down.data["movimiento"]["monto"], Decimal("-40.00"))
-        adjustments = self.account.transactions.filter(kind=Kind.ADJUSTMENT)
+        adjustments = self.account.transactions.filter(kind=MovementKind.ADJUSTMENT)
         self.assertEqual(adjustments.count(), 2)
         self.assert_consistent(self.account)
 
@@ -60,7 +59,7 @@ class AccountBalanceTests(FinanceAPITestCase):
         response = self.update_balance("100.00")
 
         self.assertIsNone(response.data["movimiento"])
-        self.assertFalse(self.account.transactions.filter(kind=Kind.ADJUSTMENT).exists())
+        self.assertFalse(self.account.transactions.filter(kind=MovementKind.ADJUSTMENT).exists())
 
     def test_adjustments_are_not_income_or_expense(self):
         self.update_balance("1000.00")

@@ -8,6 +8,13 @@ from .models import Currency, User
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
 MIN_PASSWORD_LENGTH = 8
+MISMATCH_MESSAGE = "Las contraseñas no coinciden."
+SAME_AS_CURRENT_MESSAGE = "La nueva contraseña debe ser diferente de la actual."
+
+
+def field_error(field, message):
+    """``ValidationError`` attached to one form field: ``{field: message}``."""
+    return serializers.ValidationError({field: message})
 
 
 def validate_password_strength(password):
@@ -88,9 +95,7 @@ class RegisterSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         if attrs["password"] != attrs["password_confirm"]:
-            raise serializers.ValidationError(
-                {"password_confirm": "Las contraseñas no coinciden."}
-            )
+            raise field_error("password_confirm", MISMATCH_MESSAGE)
         return attrs
 
     def create(self, validated_data):
@@ -138,13 +143,11 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         if attrs["password"] != attrs["password_confirm"]:
-            raise serializers.ValidationError(
-                {"password_confirm": "Las contraseñas no coinciden."}
-            )
+            raise field_error("password_confirm", MISMATCH_MESSAGE)
         try:
             validate_new_password(attrs["password"])
         except serializers.ValidationError as exc:
-            raise serializers.ValidationError({"password": exc.detail}) from exc
+            raise field_error("password", exc.detail) from exc
         return attrs
 
 
@@ -194,13 +197,11 @@ class PasswordChangeSerializer(serializers.Serializer):
     def validate(self, attrs):
         new_password = attrs["new_password"]
         if new_password != attrs["new_password_confirm"]:
-            raise serializers.ValidationError({"new_password_confirm": "Las contraseñas no coinciden."})
+            raise field_error("new_password_confirm", MISMATCH_MESSAGE)
         if new_password == attrs["current_password"]:
-            raise serializers.ValidationError(
-                {"new_password": "La nueva contraseña debe ser diferente de la actual."}
-            )
+            raise field_error("new_password", SAME_AS_CURRENT_MESSAGE)
         try:
             validate_new_password(new_password, user=self.context["request"].user)
         except serializers.ValidationError as exc:
-            raise serializers.ValidationError({"new_password": exc.detail}) from exc
+            raise field_error("new_password", exc.detail) from exc
         return attrs

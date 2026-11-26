@@ -2,6 +2,7 @@ import { useId, useRef, useState } from 'react'
 import Modal from './Modal'
 import ErrorState from './ErrorState'
 import { Skeleton } from './Skeleton'
+import { cleanFormValues, firstFieldWithError, initialFormValues, splitServerErrors, validateFormFields } from './formModel'
 
 /**
  * Formulario dentro de un Modal, definido por configuración.
@@ -30,29 +31,62 @@ export default function FormDialog(props) {
 
   if (loading || loadError) {
     return (
-      <Modal title={title} description={description} onClose={onClose}>
-        {loadError ? (
-          <ErrorState
-            error={loadError}
-            title="No pudimos cargar el formulario"
-            onRetry={onRetry}
-            className="border-0 p-0 shadow-none"
-          />
-        ) : (
-          <div className="space-y-4" role="status" aria-label="Cargando formulario">
-            {fields.map((field) => (
-              <div key={field.name}>
-                <Skeleton className="h-4 w-32" />
-                <Skeleton className="mt-2 h-11 w-full" />
-              </div>
-            ))}
-          </div>
-        )}
-      </Modal>
+      <FormDialogPlaceholder
+        title={title}
+        description={description}
+        fields={fields}
+        loadError={loadError}
+        onRetry={onRetry}
+        onClose={onClose}
+      />
     )
   }
 
   return <FormDialogBody {...props} />
+}
+
+/** Modal con el esqueleto de los campos (cargando) o el error de carga del formulario. */
+export function FormDialogPlaceholder({ title, description, fields, loadError = null, onRetry, onClose }) {
+  return (
+    <Modal title={title} description={description} onClose={onClose}>
+      {loadError ? (
+        <ErrorState error={loadError} title="No pudimos cargar el formulario" onRetry={onRetry} className="border-0 p-0 shadow-none" />
+      ) : (
+        <output className="block space-y-4" aria-label="Cargando formulario">
+          {fields.map((field) => (
+            <div key={field.name}>
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="mt-2 h-11 w-full" />
+            </div>
+          ))}
+        </output>
+      )}
+    </Modal>
+  )
+}
+
+/** Botones "Cancelar" y enviar del pie del diálogo. El de enviar apunta al formulario `formId`. */
+export function FormDialogFooter({ formId, busy, submitLabel, busyLabel, onClose }) {
+  return (
+    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <button
+        type="button"
+        onClick={onClose}
+        className="h-11 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+      >
+        Cancelar
+      </button>
+      {/* aria-disabled (no `disabled`) para que el foco no salte al <body> mientras guarda */}
+      <button
+        type="submit"
+        form={formId}
+        aria-disabled={busy || undefined}
+        className="h-11 rounded-xl bg-emerald-600 px-5 text-sm font-semibold text-white hover:bg-emerald-700 aria-disabled:cursor-wait aria-disabled:opacity-60"
+      >
+        {busy ? busyLabel : submitLabel}
+      </button>
+    </div>
+  )
 }
 
 function FormDialogBody({
@@ -69,7 +103,7 @@ function FormDialogBody({
 }) {
   const formId = useId()
   const formRef = useRef(null)
-  const [values, setValues] = useState(() => buildInitialValues(fields, initialValues))
+  const [values, setValues] = useState(() => initialFormValues(fields, initialValues))
   const [errors, setErrors] = useState({})
   const [formError, setFormError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -86,7 +120,7 @@ function FormDialogBody({
   }
 
   function focusFirstError(fieldErrors) {
-    const first = fields.find((field) => fieldErrors[field.name])
+    const first = firstFieldWithError(fields, fieldErrors)
     if (!first) return
     window.requestAnimationFrame(() => {
       formRef.current?.elements.namedItem(first.name)?.focus()
@@ -97,7 +131,7 @@ function FormDialogBody({
     event.preventDefault()
     if (busy) return
 
-    const clientErrors = { ...validateFields(fields, values), ...(validate?.(values) || {}) }
+    const clientErrors = { ...validateFormFields(fields, values), ...validate?.(values) }
     if (Object.keys(clientErrors).length > 0) {
       setErrors(clientErrors)
       focusFirstError(clientErrors)
@@ -108,24 +142,12 @@ function FormDialogBody({
     setErrors({})
     setFormError('')
     try {
-      await onSubmit(cleanValues(fields, values))
+      await onSubmit(cleanFormValues(fields, values))
     } catch (error) {
-      const names = new Set(fields.map((field) => field.name))
-      const known = {}
-      const unknown = []
-      for (const [key, message] of Object.entries(error?.fieldErrors || {})) {
-        if (names.has(key)) known[key] = message
-        else unknown.push(message)
-      }
-      setErrors(known)
-      setFormError(
-        unknown.length > 0
-          ? unknown.join(' ')
-          : Object.keys(known).length > 0
-            ? ''
-            : error?.message || 'No se pudo completar la operación.',
-      )
-      focusFirstError(known)
+      const server = splitServerErrors(fields, error)
+      setErrors(server.fieldErrors)
+      setFormError(server.formError)
+      focusFirstError(server.fieldErrors)
     } finally {
       setBusy(false)
     }
@@ -136,26 +158,7 @@ function FormDialogBody({
       title={title}
       description={description}
       onClose={onClose}
-      footer={
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="h-11 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            Cancelar
-          </button>
-          {/* aria-disabled (no `disabled`) para que el foco no salte al <body> mientras guarda */}
-          <button
-            type="submit"
-            form={formId}
-            aria-disabled={busy || undefined}
-            className="h-11 rounded-xl bg-emerald-600 px-5 text-sm font-semibold text-white hover:bg-emerald-700 aria-disabled:cursor-wait aria-disabled:opacity-60"
-          >
-            {busy ? busyLabel : submitLabel}
-          </button>
-        </div>
-      }
+      footer={<FormDialogFooter formId={formId} busy={busy} submitLabel={submitLabel} busyLabel={busyLabel} onClose={onClose} />}
     >
       <form id={formId} ref={formRef} onSubmit={handleSubmit} noValidate className="space-y-4">
         {fields.map((field) => (
@@ -179,9 +182,30 @@ function FormDialogBody({
   )
 }
 
+/** `aria-describedby` del control: el error si lo hay; si no, la ayuda. */
+function describedByFor(id, error, hint) {
+  if (error) return `${id}-error`
+  return hint ? `${id}-hint` : undefined
+}
+
+function FieldMessage({ id, error, hint }) {
+  if (error) {
+    return (
+      <p id={`${id}-error`} className="mt-1.5 text-sm font-medium text-red-600">
+        {error}
+      </p>
+    )
+  }
+  if (!hint) return null
+  return (
+    <p id={`${id}-hint`} className="mt-1.5 text-xs text-slate-500">
+      {hint}
+    </p>
+  )
+}
+
 /** Campo de formulario con label, error y ayuda. Inputs en 16 px en móvil (evita el zoom de iOS). */
 export function FormField({ id, field, value, error, disabled, onChange }) {
-  const describedBy = error ? `${id}-error` : field.hint ? `${id}-hint` : undefined
   const control = `mt-1.5 h-11 w-full rounded-xl border bg-white px-3 text-base text-slate-800 outline-none transition focus:ring-4 disabled:opacity-60 sm:text-sm ${
     error
       ? 'border-red-300 focus:border-red-400 focus:ring-red-100'
@@ -193,7 +217,7 @@ export function FormField({ id, field, value, error, disabled, onChange }) {
     value,
     disabled,
     'aria-invalid': error ? 'true' : 'false',
-    'aria-describedby': describedBy,
+    'aria-describedby': describedByFor(id, error, field.hint),
     'aria-required': field.required ? 'true' : undefined,
     onChange: (event) => onChange(event.target.value),
     className: control,
@@ -224,64 +248,7 @@ export function FormField({ id, field, value, error, disabled, onChange }) {
           autoComplete={field.autoComplete ?? 'off'}
         />
       )}
-      {error ? (
-        <p id={`${id}-error`} className="mt-1.5 text-sm font-medium text-red-600">
-          {error}
-        </p>
-      ) : field.hint ? (
-        <p id={`${id}-hint`} className="mt-1.5 text-xs text-slate-500">
-          {field.hint}
-        </p>
-      ) : null}
+      <FieldMessage id={id} error={error} hint={field.hint} />
     </div>
   )
-}
-
-function buildInitialValues(fields, initialValues) {
-  const values = {}
-  for (const field of fields) {
-    const provided = initialValues[field.name]
-    if (provided !== undefined && provided !== null) {
-      values[field.name] = String(provided)
-    } else if (field.type === 'select') {
-      values[field.name] = field.options?.[0]?.[0] ?? ''
-    } else {
-      values[field.name] = ''
-    }
-  }
-  return values
-}
-
-function validateFields(fields, values) {
-  const errors = {}
-  for (const field of fields) {
-    const raw = values[field.name]
-    const value = typeof raw === 'string' ? raw.trim() : raw
-    if (field.required && (value === '' || value === undefined || value === null)) {
-      errors[field.name] = field.type === 'select' ? 'Selecciona una opción.' : 'Este campo es obligatorio.'
-      continue
-    }
-    if (field.type === 'number' && value !== '') {
-      const number = Number(value)
-      if (!Number.isFinite(number)) {
-        errors[field.name] = 'Ingresa un número válido.'
-      } else if (field.min !== undefined && number < Number(field.min)) {
-        errors[field.name] =
-          field.minMessage || (Number(field.min) > 0 ? 'Ingresa un monto mayor a 0.' : 'El monto no puede ser negativo.')
-      }
-    }
-  }
-  return errors
-}
-
-/** Recorta textos y omite opcionales vacíos (el backend aplica sus valores por defecto). */
-function cleanValues(fields, values) {
-  const result = {}
-  for (const field of fields) {
-    const raw = values[field.name]
-    const value = typeof raw === 'string' ? raw.trim() : raw
-    if (value === '' && !field.required && field.type !== 'text') continue
-    result[field.name] = value
-  }
-  return result
 }

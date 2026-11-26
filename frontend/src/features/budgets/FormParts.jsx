@@ -84,7 +84,7 @@ export function FormModal({ formId, formRef, title, description, onClose, onSubm
 export function QuickPicks({ label, options, value, onPick }) {
   if (!options.length) return null
   return (
-    <div role="group" aria-label={label} className="mt-2 flex flex-wrap gap-1.5">
+    <fieldset aria-label={label} className="mt-2 flex min-w-0 flex-wrap gap-1.5">
       {options.map((option) => {
         const active = option.active ?? option.value === value
         return (
@@ -101,7 +101,7 @@ export function QuickPicks({ label, options, value, onPick }) {
           </button>
         )
       })}
-    </div>
+    </fieldset>
   )
 }
 

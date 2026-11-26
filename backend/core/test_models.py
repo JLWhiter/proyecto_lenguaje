@@ -5,10 +5,9 @@ from decimal import Decimal
 from django.db import IntegrityError
 
 from .exceptions import OperacionNoPermitidaError, SaldoInsuficienteError
-from .models import FinanceAccount, FinanceBudget, FinanceTransaction
+from .models import FinanceAccount, FinanceBudget, FinanceTransaction, MovementKind
 from .testing import FinanceAPITestCase, local_datetime
 
-Kind = FinanceTransaction.Kind
 
 
 class AccountDomainTests(FinanceAPITestCase):
@@ -24,7 +23,7 @@ class AccountDomainTests(FinanceAPITestCase):
             stale.withdraw(Decimal("80.00"), name="Otra compra", category="Otros")
 
         self.assert_balance(self.account, "20.00")
-        self.assertEqual(self.account.transactions.filter(kind=Kind.REGULAR).count(), 1)
+        self.assertEqual(self.account.transactions.filter(kind=MovementKind.REGULAR).count(), 1)
 
     def test_withdrawing_the_exact_balance_after_decimal_operations(self):
         for amount in ("0.10", "0.20", "33.33", "0.07"):
@@ -62,7 +61,7 @@ class AccountDomainTests(FinanceAPITestCase):
         with self.assertRaises(SaldoInsuficienteError):
             self.account.transfer_to(other, Decimal("100.01"))
 
-        self.assertFalse(FinanceTransaction.objects.filter(kind=Kind.TRANSFER).exists())
+        self.assertFalse(FinanceTransaction.objects.filter(kind=MovementKind.TRANSFER).exists())
         self.assert_balance(self.account, "100.00")
 
     def test_archived_account_rejects_movements(self):
@@ -101,7 +100,7 @@ class TransactionDomainTests(FinanceAPITestCase):
         account = self.open_account(balance="10.00")
         leg = FinanceTransaction.objects.create(
             owner=self.user, account=account, name="Antigua", category="Transferencia",
-            transaction_type="GASTO", kind=Kind.TRANSFER, amount=Decimal("5.00"), occurred_at=local_datetime(2024, 5, 1),
+            transaction_type="GASTO", kind=MovementKind.TRANSFER, amount=Decimal("5.00"), occurred_at=local_datetime(2024, 5, 1),
         )
 
         with self.assertRaises(OperacionNoPermitidaError):

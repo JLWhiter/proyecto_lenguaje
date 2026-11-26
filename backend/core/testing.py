@@ -20,9 +20,9 @@ def local_datetime(year, month, day, hour=12, minute=0):
 
 class FinanceAPITestCase(TestCase):
     def setUp(self):
-        User = get_user_model()
-        self.user = User.objects.create_user(email="finance@example.com", full_name="Finance User", password="Finova#2026")
-        self.other_user = User.objects.create_user(email="other@example.com", full_name="Other User", password="Finova#2026")
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(email="finance@example.com", full_name="Finance User", password="Finova#2026")
+        self.other_user = user_model.objects.create_user(email="other@example.com", full_name="Other User", password="Finova#2026")
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
 

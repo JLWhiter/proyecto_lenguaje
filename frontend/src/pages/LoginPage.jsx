@@ -13,6 +13,7 @@ import { ArrowRightIcon, MailIcon } from '../components/icons'
 import { useAuth } from '../context/AuthContext'
 import { fieldErrorsFromApi } from '../lib/api'
 import { isValidEmail } from '../lib/validation'
+import { emailError as emailFieldError } from './authFieldErrors'
 
 export default function LoginPage() {
   const { login } = useAuth()
@@ -37,15 +38,7 @@ export default function LoginPage() {
   const emailValid = isValidEmail(email)
   const formValid = emailValid && password.length > 0
 
-  const emailError =
-    fieldErrors.email ||
-    (touched.email
-      ? email.trim().length === 0
-        ? 'Ingresa tu correo electrónico.'
-        : !emailValid
-          ? 'Ingresa un correo electrónico válido.'
-          : ''
-      : '')
+  const emailError = fieldErrors.email || emailFieldError(email, touched.email)
 
   const passwordError =
     fieldErrors.password || (touched.password && password.length === 0 ? 'Ingresa tu contraseña.' : '')
@@ -173,7 +166,7 @@ export default function LoginPage() {
                   onChange={(event) => setRememberMe(event.target.checked)}
                   className="h-4 w-4 rounded border-[#CBD5E1] accent-[#059669] focus:ring-[#10B981]/30"
                 />
-                Recordar mi sesión
+                {' '}Recordar mi sesión
               </label>
               <Link
                 to="/recuperar-contrasena"

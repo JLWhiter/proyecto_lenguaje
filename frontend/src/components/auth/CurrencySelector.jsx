@@ -1,4 +1,6 @@
 import { ChevronDownIcon, WalletIcon } from '../icons'
+import FieldMessage from './FieldMessage'
+import { fieldDescribedBy } from './feedback'
 
 export const CURRENCIES = [
   { value: 'PEN', label: 'Sol Peruano (PEN - S/)' },
@@ -15,7 +17,6 @@ export default function CurrencySelector({
   hint = 'Se usará como moneda predeterminada de tu cuenta financiera.',
   ...props
 }) {
-  const hintId = `${id}-hint`
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-3">
@@ -34,7 +35,7 @@ export default function CurrencySelector({
           value={value}
           onChange={onChange}
           aria-invalid={error ? 'true' : 'false'}
-          aria-describedby={error ? `${id}-error` : hint ? hintId : undefined}
+          aria-describedby={fieldDescribedBy(id, error, hint)}
           className={`h-12 w-full min-w-0 appearance-none truncate rounded-xl border bg-[#FBFDFC] pl-11 pr-11 text-base text-[#1F2937] transition-all duration-200 focus:bg-white focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60 sm:text-[14px] ${
             error
               ? 'border-red-300 focus:border-red-400 focus:ring-red-100'
@@ -53,15 +54,7 @@ export default function CurrencySelector({
         </span>
       </div>
 
-      {error ? (
-        <p id={`${id}-error`} role="alert" className="mt-2 text-[12px] font-medium text-[#DC5A5A]">
-          {error}
-        </p>
-      ) : hint ? (
-        <p id={hintId} className="mt-2 text-[12px] leading-relaxed text-[#64748B]">
-          {hint}
-        </p>
-      ) : null}
+      <FieldMessage id={id} error={error} hint={hint} />
     </div>
   )
 }

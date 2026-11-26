@@ -4,7 +4,9 @@ const API_ROOT = import.meta.env.VITE_API_ROOT || '/api/v1'
 const CSRF_COOKIE = 'csrftoken'
 
 // Rutas donde un 401 significa "credenciales incorrectas", no "sesión expirada".
-const AUTH_ATTEMPT_PATHS = ['/auth/login/', '/auth/register/']
+const AUTH_ATTEMPT_PATHS = new Set(['/auth/login/', '/auth/register/'])
+// Métodos que no modifican datos: no necesitan el token CSRF.
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 let csrfToken = null
 let unauthorizedHandler = null
@@ -93,25 +95,22 @@ export function toQuery(params = {}) {
   return text ? `?${text}` : ''
 }
 
-/**
- * Petición a la API de Django.
- * @param {string} path  Ruta relativa a /api/v1 (ej. '/cuentas/').
- * @param {{ method?: string, body?: unknown, signal?: AbortSignal, responseType?: 'json' | 'blob', accept?: string }} options
- */
-export async function apiRequest(path, { method = 'GET', body, signal, responseType = 'json', accept } = {}) {
-  const headers = { Accept: accept || (responseType === 'blob' ? '*/*' : 'application/json') }
+function acceptHeader(accept, responseType) {
+  if (accept) return accept
+  return responseType === 'blob' ? '*/*' : 'application/json'
+}
 
-  if (body !== undefined) {
-    headers['Content-Type'] = 'application/json'
-  }
+async function requestHeaders({ method, body, responseType, accept }) {
+  const headers = { Accept: acceptHeader(accept, responseType) }
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  if (!SAFE_METHODS.has(method)) headers['X-CSRFToken'] = await ensureCsrfToken()
+  return headers
+}
 
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
-    headers['X-CSRFToken'] = await ensureCsrfToken()
-  }
-
-  let response
+/** `fetch` a la API; un fallo de red se convierte en ApiError (status 0). Las cancelaciones se propagan tal cual. */
+async function send(path, { method, body, signal, headers }) {
   try {
-    response = await fetch(`${API_ROOT}${path}`, {
+    return await fetch(`${API_ROOT}${path}`, {
       method,
       credentials: 'include',
       headers,
@@ -122,38 +121,56 @@ export async function apiRequest(path, { method = 'GET', body, signal, responseT
     if (error.name === 'AbortError') throw error
     throw new ApiError('No pudimos conectar con el servidor. Verifica que Django esté en ejecución.', 0, null)
   }
+}
+
+function parseJson(text) {
+  if (!text) return null
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
+function statusMessage(status) {
+  if (status === 401) return 'Tu sesión expiró. Inicia sesión nuevamente.'
+  if (status >= 500) return 'El servidor tuvo un problema. Inténtalo de nuevo en unos minutos.'
+  return 'No pudimos completar la solicitud. Inténtalo de nuevo.'
+}
+
+/** Mensaje principal de una respuesta con error: `detail`, `non_field_errors`, el primer error de campo o uno según el status. */
+export function errorMessageFrom(status, data) {
+  return (
+    firstError(data?.detail) ||
+    firstError(data?.non_field_errors) ||
+    Object.values(extractFieldErrors(data))[0] ||
+    statusMessage(status)
+  )
+}
+
+/** Un 401 fuera del login/registro significa sesión expirada o cerrada: se avisa a AuthContext. */
+function notifyUnauthorized(path, status) {
+  if (status === 401 && !AUTH_ATTEMPT_PATHS.has(path) && unauthorizedHandler) unauthorizedHandler()
+}
+
+/**
+ * Petición a la API de Django.
+ * @param {string} path  Ruta relativa a /api/v1 (ej. '/cuentas/').
+ * @param {{ method?: string, body?: unknown, signal?: AbortSignal, responseType?: 'json' | 'blob', accept?: string }} options
+ */
+export async function apiRequest(path, { method = 'GET', body, signal, responseType = 'json', accept } = {}) {
+  const headers = await requestHeaders({ method, body, responseType, accept })
+  const response = await send(path, { method, body, signal, headers })
 
   if (response.ok && responseType === 'blob') {
     return response.blob()
   }
 
-  const text = await response.text()
-  let data = null
-  if (text) {
-    try {
-      data = JSON.parse(text)
-    } catch {
-      data = null
-    }
-  }
-
+  const data = parseJson(await response.text())
   if (!response.ok) {
-    if (response.status === 401 && !AUTH_ATTEMPT_PATHS.includes(path) && unauthorizedHandler) {
-      unauthorizedHandler()
-    }
-    const fieldErrors = extractFieldErrors(data)
-    const detail =
-      firstError(data?.detail) ||
-      firstError(data?.non_field_errors) ||
-      Object.values(fieldErrors)[0] ||
-      (response.status === 401
-        ? 'Tu sesión expiró. Inicia sesión nuevamente.'
-        : response.status >= 500
-          ? 'El servidor tuvo un problema. Inténtalo de nuevo en unos minutos.'
-          : 'No pudimos completar la solicitud. Inténtalo de nuevo.')
-    throw new ApiError(detail, response.status, data)
+    notifyUnauthorized(path, response.status)
+    throw new ApiError(errorMessageFrom(response.status, data), response.status, data)
   }
-
   return data
 }
 

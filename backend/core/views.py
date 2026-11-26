@@ -2,6 +2,7 @@ import logging
 
 from django.http import JsonResponse
 from django.utils import timezone
+from django.views.decorators.http import require_safe
 from rest_framework import status
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
@@ -12,13 +13,13 @@ from .alert_service import alerts_payload, apply_alert_action, ensure_alerts, re
 from .alerts import hours_text
 from .csv_export import movements_csv
 from .exceptions import FinanceError
+from .export_data import export_filename, export_movements, export_report
 from .finance import (
     accounts_payload,
     available_periods,
     budgets_payload,
     category_catalog,
     dashboard_payload,
-    filtered_movements,
     income_tax_payload,
     serialize_account,
     serialize_budgets,
@@ -26,9 +27,9 @@ from .finance import (
     spent_for,
     transactions_payload,
 )
-from .models import FinanceAccount, FinanceAlert, FinanceBudget, FinanceTransaction
+from .models import DEPOSIT_LABEL, FinanceAccount, FinanceAlert, FinanceBudget, FinanceTransaction, MovementKind, MovementType
 from .periods import local_today, period_label, period_of_moment
-from .renderers import CSVRenderer
+from .renderers import CSVRenderer, ExportNegotiation, XLSXRenderer, errors_as_json
 from .serializers import (
     AccountBalanceSerializer,
     AccountCreateSerializer,
@@ -45,17 +46,24 @@ from .serializers import (
     PeriodQuerySerializer,
     SnoozeAllSerializer,
     TransactionCreateSerializer,
-    TransactionFilterSerializer,
+    TransactionExportQuerySerializer,
     TransactionListQuerySerializer,
     TransactionUpdateSerializer,
     TransferSerializer,
 )
 from .taxes import uit_for_year
+from .xlsx_export import workbook_bytes
 
 logger = logging.getLogger(__name__)
 
+ACCOUNT_NOT_FOUND = "Cuenta no encontrada."
+MOVEMENT_NOT_FOUND = "Movimiento no encontrado."
+BUDGET_NOT_FOUND = "Presupuesto no encontrado."
 
+
+@require_safe
 def health(request):
+    """Estado del servicio. Solo lectura: acepta GET y HEAD (otro método responde 405)."""
     return JsonResponse({"status": "ok", "service": "proyecto-lenguaje-api"})
 
 
@@ -122,12 +130,12 @@ class TransactionListView(FinanceAPIView):
     def post(self, request):
         values = self.validated(TransactionCreateSerializer, request.data)
         account = values["account"]
-        register = account.deposit if values["type"] == FinanceTransaction.Type.INCOME else account.withdraw
+        register = account.deposit if values["type"] == MovementType.INCOME else account.withdraw
         movement = register(
             values["amount"],
             name=values["name"],
             category=values["category"],
-            kind=FinanceTransaction.Kind.REGULAR,
+            kind=MovementKind.REGULAR,
             occurred_at=values.get("occurred_at"),
         )
         self.refresh_alerts(movement)
@@ -136,7 +144,7 @@ class TransactionListView(FinanceAPIView):
 
 class TransactionDetailView(FinanceAPIView):
     def patch(self, request, pk):
-        movement = self.owned(FinanceTransaction.objects, pk, "Movimiento no encontrado.")
+        movement = self.owned(FinanceTransaction.objects, pk, MOVEMENT_NOT_FOUND)
         values = dict(self.validated(TransactionUpdateSerializer, request.data, instance=movement))
         previous_period = period_of_moment(movement.occurred_at)
         movement.edit(account=values.pop("account", None), **values)
@@ -144,7 +152,7 @@ class TransactionDetailView(FinanceAPIView):
         return success("Movimiento actualizado.", serialize_transaction(movement))
 
     def delete(self, request, pk):
-        movement = self.owned(FinanceTransaction.objects, pk, "Movimiento no encontrado.")
+        movement = self.owned(FinanceTransaction.objects, pk, MOVEMENT_NOT_FOUND)
         movement.cancel()
         self.refresh_alerts(movement)
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -165,22 +173,42 @@ class DepositView(FinanceAPIView):
     def post(self, request):
         values = self.validated(DepositSerializer, request.data)
         movement = values["account"].deposit(
-            values["amount"], name=values["description"] or "Depósito", occurred_at=values.get("occurred_at")
+            values["amount"], name=values["description"] or DEPOSIT_LABEL, occurred_at=values.get("occurred_at")
         )
         self.refresh_alerts(movement)
         return success("Depósito realizado.", serialize_transaction(movement), status.HTTP_201_CREATED)
 
 
 class TransactionExportView(FinanceAPIView):
-    renderer_classes = [CSVRenderer]
+    """``GET /transacciones/exportar/?formato=xlsx|csv&mes=AAAA-MM&todo=1&tipo=&categoria=&cuenta_id=&search=``.
+
+    Excel (.xlsx) por defecto; CSV con ``formato=csv`` (o, sin ``formato``, con
+    ``Accept: text/csv``, como antes). ``todo=1`` exporta todo el historial e
+    ignora ``mes``. Nunca responde 406; los errores de un Excel llegan como JSON
+    y los de un CSV como filas "campo,mensaje".
+    """
+
+    renderer_classes = [XLSXRenderer, CSVRenderer]
+    content_negotiation_class = ExportNegotiation
 
     def get(self, request):
-        filters = self.validated(TransactionFilterSerializer, request.query_params)
-        filename = f"finova-transacciones-{filters['mes']}.csv"
+        filters = self.validated(TransactionExportQuerySerializer, request.query_params)
+        extension = request.accepted_renderer.format
+        items = export_movements(request.user, filters)
+        if extension == CSVRenderer.format:
+            content = movements_csv(items)
+        else:
+            content = workbook_bytes(export_report(request.user, filters, items, local_today()))
         return Response(
-            movements_csv(filtered_movements(request.user, filters)),
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            content,
+            headers={
+                "Content-Disposition": f'attachment; filename="{export_filename(filters, extension)}"',
+                "Cache-Control": "no-store",
+            },
         )
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        return errors_as_json(super().finalize_response(request, response, *args, **kwargs))
 
 
 class BudgetListView(FinanceAPIView):
@@ -199,7 +227,7 @@ class BudgetDetailView(FinanceAPIView):
     update_serializer = BudgetSerializer
 
     def patch(self, request, pk):
-        budget = self.owned(FinanceBudget.objects, pk, "Presupuesto no encontrado.")
+        budget = self.owned(FinanceBudget.objects, pk, BUDGET_NOT_FOUND)
         values = self.validated(self.update_serializer, request.data, instance=budget, partial=True)
         for field, value in values.items():
             setattr(budget, field, value)
@@ -208,7 +236,7 @@ class BudgetDetailView(FinanceAPIView):
         return success("Presupuesto actualizado.", budget_item(budget))
 
     def delete(self, request, pk):
-        budget = self.owned(FinanceBudget.objects, pk, "Presupuesto no encontrado.")
+        budget = self.owned(FinanceBudget.objects, pk, BUDGET_NOT_FOUND)
         budget.delete()
         self.refresh_alerts(budget.month)
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -269,7 +297,7 @@ def active_accounts():
 
 class AccountDetailView(FinanceAPIView):
     def patch(self, request, pk):
-        account = self.owned(active_accounts(), pk, "Cuenta no encontrada.")
+        account = self.owned(active_accounts(), pk, ACCOUNT_NOT_FOUND)
         values = self.validated(AccountSerializer, request.data, instance=account, partial=True)
         for field, value in values.items():
             setattr(account, field, value)
@@ -277,14 +305,14 @@ class AccountDetailView(FinanceAPIView):
         return success("Cuenta actualizada.", serialize_account(account))
 
     def delete(self, request, pk):
-        archived = self.owned(active_accounts(), pk, "Cuenta no encontrada.").close()
+        archived = self.owned(active_accounts(), pk, ACCOUNT_NOT_FOUND).close()
         message = "La cuenta tenía movimientos, así que se archivó." if archived else "Cuenta eliminada."
         return success(message, accion="archivada" if archived else "eliminada")
 
 
 class AccountBalanceUpdateView(FinanceAPIView):
     def patch(self, request, pk):
-        account = self.owned(active_accounts(), pk, "Cuenta no encontrada.")
+        account = self.owned(active_accounts(), pk, ACCOUNT_NOT_FOUND)
         values = self.validated(AccountBalanceSerializer, request.data)
         movement = account.adjust_balance(values["balance"])
         self.refresh_alerts(movement)

@@ -5,7 +5,8 @@ const CARD = 'rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p
 /** Esqueleto con la misma grilla que el Resumen (evita saltos al cargar). */
 export default function DashboardSkeleton() {
   return (
-    <div className="space-y-5" role="status" aria-label="Cargando resumen">
+    // <output> = región de estado nativa (role="status"); `block` porque <output> es inline.
+    <output className="block space-y-5" aria-label="Cargando resumen">
       <div className={CARD}>
         <Skeleton className="h-5 w-48" />
         <Skeleton className="mt-5 h-10 w-64 max-w-full" />
@@ -40,6 +41,6 @@ export default function DashboardSkeleton() {
         </div>
       </div>
       <span className="sr-only">Cargando resumen…</span>
-    </div>
+    </output>
   )
 }

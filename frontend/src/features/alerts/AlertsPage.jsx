@@ -11,10 +11,14 @@ import {
   alertFilterOptions,
   alertTarget,
   groupByPeriod,
+  leftListMessage,
   matchesFilter,
+  mergeAlertItems,
   plural,
   SILENCE_HOURS,
+  silenceAllMessage,
   untilText,
+  withPatch,
 } from './alertModel'
 import { useAlertActions, useAlerts } from './useAlerts'
 
@@ -29,6 +33,54 @@ const NO_PATCHES = {}
 const OUTLINE_BUTTON =
   'inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50'
 
+/** Los conteos son globales (iguales en "Activas" y "Todas"): se conservan mientras carga la otra vista. */
+function useKnownCounts(data) {
+  const [knownCounts, setKnownCounts] = useState(null)
+  if (data?.counts && data.counts !== knownCounts) setKnownCounts(data.counts)
+  return data?.counts ?? knownCounts
+}
+
+/** Respuesta de la última acción aplicada encima de los datos, hasta que llega la recarga del servidor. */
+function useAlertPatches(data) {
+  const [patch, setPatch] = useState({ base: null, items: NO_PATCHES, inserts: NO_PATCHES })
+  const dataRef = useRef(data)
+  useLayoutEffect(() => {
+    dataRef.current = data
+  })
+
+  /** Aplica la alerta devuelta por la API hasta la próxima recarga; `insertAt` la vuelve a poner en la lista. */
+  function applyPatch(item, { insertAt } = {}) {
+    if (!item?.id) return
+    setPatch((current) => withPatch(current, dataRef.current, item, insertAt))
+  }
+
+  const current = patch.base === data
+  return { patches: current ? patch.items : NO_PATCHES, inserts: current ? patch.inserts : NO_PATCHES, applyPatch }
+}
+
+/** Alertas con una acción en curso: `[busy, setItemBusy(id, value)]`. */
+function useBusyIds() {
+  const [busy, setBusy] = useState({})
+  function setItemBusy(id, value) {
+    setBusy((current) => {
+      const next = { ...current }
+      if (value) next[id] = true
+      else delete next[id]
+      return next
+    })
+  }
+  return [busy, setItemBusy]
+}
+
+/** Región viva: `n` alterna un espacio final para que se repita el anuncio aunque el texto sea el mismo. */
+function useAnnouncer() {
+  const [announcement, setAnnouncement] = useState({ text: '', n: 0 })
+  function announce(text) {
+    if (text) setAnnouncement((current) => ({ text, n: current.n + 1 }))
+  }
+  return [announcement, announce]
+}
+
 export default function AlertsPage() {
   useDocumentTitle('Alertas')
   const navigate = useNavigate()
@@ -39,79 +91,27 @@ export default function AlertsPage() {
   const alerts = useAlerts({ estado })
   const { act, undo, silenceAll } = useAlertActions()
 
-  const [busy, setBusy] = useState({})
-  const [patch, setPatch] = useState({ base: null, items: NO_PATCHES, inserts: NO_PATCHES })
+  const [busy, setItemBusy] = useBusyIds()
   const [undoEntry, setUndoEntry] = useState(null)
   const [focusId, setFocusId] = useState(null)
   const [silencing, setSilencing] = useState(false)
-  const [announcement, setAnnouncement] = useState({ text: '', n: 0 })
+  const [announcement, announce] = useAnnouncer()
 
   const data = alerts.data
-  const dataRef = useRef(data)
-  useLayoutEffect(() => {
-    dataRef.current = data
-  })
-
-  // Los conteos son globales (iguales en "Activas" y "Todas"): se conservan mientras carga la otra vista.
-  const [knownCounts, setKnownCounts] = useState(null)
-  if (data?.counts && data.counts !== knownCounts) setKnownCounts(data.counts)
-  const counts = data?.counts ?? knownCounts
-
-  // Respuesta de la última acción aplicada encima de los datos, hasta que llega la recarga del servidor.
-  const patches = patch.base === data ? patch.items : NO_PATCHES
-  const inserts = patch.base === data ? patch.inserts : NO_PATCHES
+  const counts = useKnownCounts(data)
+  const { patches, inserts, applyPatch } = useAlertPatches(data)
   const serverItems = data?.items ?? NO_ITEMS
 
-  const items = useMemo(() => {
-    let list = serverItems.map((item) => patches[item.id] ?? item)
-    // Alertas restauradas con "Deshacer" que la lista actual (anterior a la recarga) todavía no trae.
-    for (const [id, index] of Object.entries(inserts)) {
-      const item = patches[id]
-      if (item && !list.some((entry) => entry.id === item.id)) list = [...list.slice(0, index), item, ...list.slice(index)]
-    }
-    if (estado === ACTIVE_ALERTS) {
-      const undoId = undoEntry?.alert.id
-      list = list.filter((item) => item.activa !== false || item.id === undoId)
-      if (undoEntry && !list.some((item) => item.id === undoId)) {
-        const index = Math.min(undoEntry.index, list.length)
-        list = [...list.slice(0, index), undoEntry.alert, ...list.slice(index)]
-      }
-    }
-    return list
-  }, [serverItems, patches, inserts, estado, undoEntry])
+  const items = useMemo(
+    () => mergeAlertItems({ serverItems, patches, inserts, estado, undoEntry }),
+    [serverItems, patches, inserts, estado, undoEntry],
+  )
 
   const options = useMemo(() => alertFilterOptions(data?.filters), [data?.filters])
   const activeFilter = options.some((option) => option.key === filter) ? filter : ALL_ALERTS
   const activeOption = options.find((option) => option.key === activeFilter)
   const visible = useMemo(() => items.filter((alert) => matchesFilter(alert, activeFilter)), [items, activeFilter])
   const groups = useMemo(() => groupByPeriod(visible), [visible])
-  const showPeriodHeadings = groups.length > 1 || (groups.length === 1 && !groups[0].current)
-
-  function announce(text) {
-    if (text) setAnnouncement((current) => ({ text, n: current.n + 1 }))
-  }
-
-  function setItemBusy(id, value) {
-    setBusy((current) => {
-      const next = { ...current }
-      if (value) next[id] = true
-      else delete next[id]
-      return next
-    })
-  }
-
-  /** Aplica la alerta devuelta por la API hasta la próxima recarga; `insertAt` la vuelve a poner en la lista. */
-  function applyPatch(item, { insertAt } = {}) {
-    if (!item?.id) return
-    setPatch((current) => {
-      const base = dataRef.current
-      const same = current.base === base
-      const items = { ...(same ? current.items : NO_PATCHES), [item.id]: item }
-      const inserts = { ...(same ? current.inserts : NO_PATCHES) }
-      if (insertAt !== undefined) inserts[item.id] = insertAt
-      return { base, items, inserts }
-    })
-  }
 
   function changeEstado(next) {
     if (next === estado) return
@@ -131,8 +131,7 @@ export default function AlertsPage() {
     applyPatch(result.data)
 
     if (leavesActiveList) {
-      const until = untilText(result.data?.pospuesta_hasta)
-      const message = action === 'snooze' ? `Alerta pospuesta${until ? ` hasta ${until}` : ''}` : 'Alerta descartada'
+      const message = leftListMessage(action, untilText(result.data?.pospuesta_hasta))
       setUndoEntry({ alert, kind: action, message, index })
       announce(`${message}. Puedes deshacerlo.`)
     } else if (action === 'read' || action === 'unread') {
@@ -166,12 +165,9 @@ export default function AlertsPage() {
   }
 
   async function handleSilenceAll() {
-    const count = counts?.activas ?? 0
     const ok = await confirm({
       title: '¿Silenciar todas las alertas?',
-      message: `Se ocultarán por ${SILENCE_HOURS} horas ${
-        count === 1 ? 'tu alerta activa' : `tus ${count} alertas activas`
-      }. Después volverán a aparecer si siguen vigentes; antes puedes restaurarlas desde «Todas».`,
+      message: silenceAllMessage(counts?.activas ?? 0),
       confirmLabel: `Silenciar ${SILENCE_HOURS} h`,
     })
     if (!ok) return
@@ -202,71 +198,17 @@ export default function AlertsPage() {
           </button>
         </div>
 
-        {counts ? (
-          <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-slate-700">
-            <span>{plural(counts.activas, 'activa', 'activas')}</span>
-            <span aria-hidden="true" className="text-slate-300">
-              ·
-            </span>
-            <span className={counts.no_leidas > 0 ? 'text-emerald-700' : ''}>{counts.no_leidas} sin leer</span>
-            {estado === ALL_STATES && (
-              <>
-                <span aria-hidden="true" className="text-slate-300">
-                  ·
-                </span>
-                <span>{counts.total} en total</span>
-              </>
-            )}
-          </p>
-        ) : (
-          <Skeleton className="mt-3 h-5 w-40" />
-        )}
+        <AlertCounts counts={counts} estado={estado} />
 
         <div className="mt-5 space-y-4">
-          <div role="group" aria-label="Qué alertas mostrar" className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1 sm:inline-grid">
-            {VIEWS.map((view) => {
-              const active = view.key === estado
-              const count = counts ? view.count(counts) : null
-              return (
-                <button
-                  key={view.key}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => changeEstado(view.key)}
-                  className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition ${
-                    active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {view.label}
-                  {count !== null && (
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs tabular-nums ${
-                        active ? 'bg-emerald-100 text-emerald-800' : 'bg-white/80 text-slate-600'
-                      }`}
-                    >
-                      {count}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-
-          {data ? (
-            <FilterChips tone="emerald" label="Filtrar por tipo de alerta" options={options} value={activeFilter} onChange={setFilter} />
-          ) : alerts.status === 'loading' ? (
-            <div className="flex flex-wrap gap-2" aria-hidden="true">
-              {['w-24', 'w-32', 'w-36', 'w-32'].map((width, index) => (
-                <Skeleton key={index} className={`h-10 rounded-full ${width}`} />
-              ))}
-            </div>
-          ) : null}
+          <ViewToggle counts={counts} estado={estado} onChange={changeEstado} />
+          <TypeFilter loaded={Boolean(data)} loading={alerts.status === 'loading'} options={options} value={activeFilter} onChange={setFilter} />
         </div>
       </section>
 
       <p className="sr-only" aria-live="polite">
         {announcement.text}
-        {announcement.n % 2 ? ' ' : ''}
+        {announcement.n % 2 ? ' ' : ''}
       </p>
 
       {alerts.status === 'loading' && <AlertsSkeleton />}
@@ -275,76 +217,175 @@ export default function AlertsPage() {
 
       {alerts.status === 'ready' && (
         <>
-          {alerts.error && (
-            <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              <span className="inline-flex min-w-0 items-center gap-2">
-                <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
-                No pudimos actualizar las alertas; lo que ves puede estar desactualizado.
-              </span>
-              <button type="button" onClick={alerts.reload} className={OUTLINE_BUTTON}>
-                <RotateCw className="h-4 w-4" aria-hidden="true" />
-                Reintentar
-              </button>
-            </div>
-          )}
-
-          {items.length === 0 ? (
-            <AllClear
-              estado={estado}
-              total={counts?.total ?? 0}
-              onShowAll={() => changeEstado(ALL_STATES)}
-            />
-          ) : visible.length === 0 ? (
-            <EmptyState
-              icon={ListFilter}
-              title="No hay alertas de este tipo"
-              description={`No tienes alertas ${estado === ACTIVE_ALERTS ? 'activas ' : ''}de «${activeOption?.name ?? 'este tipo'}».`}
-              action={
-                <button type="button" onClick={() => setFilter(ALL_ALERTS)} className={OUTLINE_BUTTON}>
-                  Ver todos los tipos
-                </button>
-              }
-            />
-          ) : (
-            <div className="space-y-6">
-              {groups.map((group) => (
-                <section key={group.key} aria-labelledby={`alerts-period-${group.key}`}>
-                  <h2
-                    id={`alerts-period-${group.key}`}
-                    className={showPeriodHeadings ? 'mb-3 flex flex-wrap items-center gap-2 px-1 text-base font-bold text-slate-800' : 'sr-only'}
-                  >
-                    <CalendarDays className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
-                    {group.label}
-                    <span className="rounded-full bg-slate-200/70 px-2 py-0.5 text-xs font-semibold text-slate-600">{group.note}</span>
-                  </h2>
-                  <ul className="space-y-4">
-                    {group.items.map((alert) => (
-                      <li key={alert.id}>
-                        {estado === ACTIVE_ALERTS && undoEntry?.alert.id === alert.id ? (
-                          <AlertUndoRow
-                            entry={undoEntry}
-                            busy={Boolean(busy[alert.id])}
-                            onUndo={handleUndo}
-                            onClose={() => closeUndo(alert.id)}
-                          />
-                        ) : (
-                          <AlertCard
-                            alert={alert}
-                            busy={Boolean(busy[alert.id])}
-                            focusOnMount={focusId === alert.id}
-                            onOpen={handleOpen}
-                            onAction={handleAction}
-                          />
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
-            </div>
-          )}
+          {alerts.error && <StaleBanner onRetry={alerts.reload} />}
+          <AlertResults
+            estado={estado}
+            items={items}
+            groups={groups}
+            total={counts?.total ?? 0}
+            typeName={activeOption?.name}
+            undoEntry={undoEntry}
+            busy={busy}
+            focusId={focusId}
+            handlers={{
+              open: handleOpen,
+              action: handleAction,
+              undo: handleUndo,
+              closeUndo,
+              showAll: () => changeEstado(ALL_STATES),
+              showAllTypes: () => setFilter(ALL_ALERTS),
+            }}
+          />
         </>
       )}
+    </div>
+  )
+}
+
+/** "3 activas · 2 sin leer (· 9 en total)" o su esqueleto mientras no hay conteos. */
+function AlertCounts({ counts, estado }) {
+  if (!counts) return <Skeleton className="mt-3 h-5 w-40" />
+  return (
+    <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-slate-700">
+      <span>{plural(counts.activas, 'activa', 'activas')}</span>
+      <span aria-hidden="true" className="text-slate-300">
+        ·
+      </span>
+      <span className={counts.no_leidas > 0 ? 'text-emerald-700' : ''}>{counts.no_leidas} sin leer</span>
+      {estado === ALL_STATES && (
+        <>
+          <span aria-hidden="true" className="text-slate-300">
+            ·
+          </span>
+          <span>{counts.total} en total</span>
+        </>
+      )}
+    </p>
+  )
+}
+
+/** Activas | Todas. <fieldset> = grupo nativo; `min-w-auto` anula el mínimo "min-content" que le da el navegador. */
+function ViewToggle({ counts, estado, onChange }) {
+  return (
+    <fieldset aria-label="Qué alertas mostrar" className="grid min-w-auto grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1 sm:inline-grid">
+      {VIEWS.map((view) => {
+        const active = view.key === estado
+        const count = counts ? view.count(counts) : null
+        return (
+          <button
+            key={view.key}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(view.key)}
+            className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition ${
+              active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            {view.label}
+            {count !== null && (
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs tabular-nums ${
+                  active ? 'bg-emerald-100 text-emerald-800' : 'bg-white/80 text-slate-600'
+                }`}
+              >
+                {count}
+              </span>
+            )}
+          </button>
+        )
+      })}
+    </fieldset>
+  )
+}
+
+/** Chips por tipo de alerta (cuando hay datos) o su esqueleto mientras carga. */
+function TypeFilter({ loaded, loading, options, value, onChange }) {
+  if (loaded) {
+    return <FilterChips tone="emerald" label="Filtrar por tipo de alerta" options={options} value={value} onChange={onChange} />
+  }
+  if (!loading) return null
+  return (
+    <div className="flex flex-wrap gap-2" aria-hidden="true">
+      {['w-24', 'w-32', 'w-36', 'w-32'].map((width, index) => (
+        <Skeleton key={index} className={`h-10 rounded-full ${width}`} />
+      ))}
+    </div>
+  )
+}
+
+function StaleBanner({ onRetry }) {
+  return (
+    <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <span className="inline-flex min-w-0 items-center gap-2">
+        <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+        No pudimos actualizar las alertas; lo que ves puede estar desactualizado.
+      </span>
+      <button type="button" onClick={onRetry} className={OUTLINE_BUTTON}>
+        <RotateCw className="h-4 w-4" aria-hidden="true" />
+        Reintentar
+      </button>
+    </div>
+  )
+}
+
+/**
+ * Lista agrupada por período, o el estado vacío que corresponda.
+ * `handlers`: `{ open, action, undo, closeUndo, showAll, showAllTypes }`.
+ */
+function AlertResults({ estado, items, groups, total, typeName, undoEntry, busy, focusId, handlers }) {
+  if (items.length === 0) return <AllClear estado={estado} total={total} onShowAll={handlers.showAll} />
+  if (groups.length === 0) {
+    return (
+      <EmptyState
+        icon={ListFilter}
+        title="No hay alertas de este tipo"
+        description={`No tienes alertas ${estado === ACTIVE_ALERTS ? 'activas ' : ''}de «${typeName ?? 'este tipo'}».`}
+        action={
+          <button type="button" onClick={handlers.showAllTypes} className={OUTLINE_BUTTON}>
+            Ver todos los tipos
+          </button>
+        }
+      />
+    )
+  }
+
+  const showPeriodHeadings = groups.length > 1 || !groups[0].current
+  return (
+    <div className="space-y-6">
+      {groups.map((group) => (
+        <section key={group.key} aria-labelledby={`alerts-period-${group.key}`}>
+          <h2
+            id={`alerts-period-${group.key}`}
+            className={showPeriodHeadings ? 'mb-3 flex flex-wrap items-center gap-2 px-1 text-base font-bold text-slate-800' : 'sr-only'}
+          >
+            <CalendarDays className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+            {group.label}
+            <span className="rounded-full bg-slate-200/70 px-2 py-0.5 text-xs font-semibold text-slate-600">{group.note}</span>
+          </h2>
+          <ul className="space-y-4">
+            {group.items.map((alert) => (
+              <li key={alert.id}>
+                {estado === ACTIVE_ALERTS && undoEntry?.alert.id === alert.id ? (
+                  <AlertUndoRow
+                    entry={undoEntry}
+                    busy={Boolean(busy[alert.id])}
+                    onUndo={handlers.undo}
+                    onClose={() => handlers.closeUndo(alert.id)}
+                  />
+                ) : (
+                  <AlertCard
+                    alert={alert}
+                    busy={Boolean(busy[alert.id])}
+                    focusOnMount={focusId === alert.id}
+                    onOpen={handlers.open}
+                    onAction={handlers.action}
+                  />
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
     </div>
   )
 }
@@ -373,7 +414,8 @@ function AllClear({ estado, total, onShowAll }) {
 
 function AlertsSkeleton() {
   return (
-    <div className="space-y-4" role="status" aria-label="Cargando alertas">
+    // <output> = región de estado nativa (role="status"); `block` porque <output> es inline.
+    <output className="block space-y-4" aria-label="Cargando alertas">
       {[0, 1, 2].map((index) => (
         <div key={index} className="rounded-[24px] border-l-4 border-l-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div className="flex items-start gap-3">
@@ -394,6 +436,6 @@ function AlertsSkeleton() {
         </div>
       ))}
       <span className="sr-only">Cargando alertas</span>
-    </div>
+    </output>
   )
 }

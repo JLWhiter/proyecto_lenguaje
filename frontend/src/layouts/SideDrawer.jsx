@@ -39,20 +39,25 @@ export default function SideDrawer({ open, onClose, alertCount }) {
   }
 
   const name = user?.full_name || 'Mi cuenta'
+  // ≥ lg: barra lateral fija (<aside>). < lg: drawer modal (<dialog>, `open` solo mientras está abierto).
+  // Es siempre el mismo elemento para que la transición de entrada/salida funcione: la clase `flex` mantiene
+  // visible el <dialog> cerrado (fuera de pantalla e inerte) y `h-auto text-inherit` anulan el alto
+  // "fit-content" y el color que el navegador da a <dialog>.
+  const Panel = isDesktop ? 'aside' : 'dialog'
 
   return (
     <>
       {modal && <div aria-hidden="true" onClick={onClose} className="fixed inset-0 z-30 bg-slate-900/20 lg:hidden" />}
 
-      <aside
+      <Panel
         ref={panelRef}
         id="app-drawer"
         aria-label="Menú principal"
-        role={modal ? 'dialog' : undefined}
+        open={isDesktop ? undefined : modal}
         aria-modal={modal ? 'true' : undefined}
         inert={!open && !isDesktop}
         tabIndex={-1}
-        className={`fixed inset-y-0 left-0 z-40 flex w-[min(85vw,340px)] transform flex-col overflow-y-auto overscroll-contain border-r border-slate-200 bg-white px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 shadow-2xl outline-none transition-transform duration-300 lg:w-[340px] lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex h-auto w-[min(85vw,340px)] transform flex-col overflow-y-auto overscroll-contain border-r border-slate-200 bg-white px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 text-inherit shadow-2xl outline-none transition-transform duration-300 lg:w-[340px] lg:translate-x-0 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -122,7 +127,7 @@ export default function SideDrawer({ open, onClose, alertCount }) {
             {loggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}
           </button>
         </div>
-      </aside>
+      </Panel>
     </>
   )
 }

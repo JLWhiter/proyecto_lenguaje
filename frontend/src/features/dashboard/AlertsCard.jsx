@@ -34,7 +34,7 @@ const LEVEL_STYLES = {
 
 /** `nivel` (danger|warning|info|success) como en Alertas; `tipo` es el nivel simplificado del resumen. */
 function dashboardLevel(alert) {
-  const key = LEVEL_STYLES[alert.nivel] ? alert.nivel : LEVEL_STYLES[alert.tipo] ? alert.tipo : 'info'
+  const key = [alert.nivel, alert.tipo].find((value) => LEVEL_STYLES[value]) ?? 'info'
   const { label, Icon } = levelOf(key)
   return { ...LEVEL_STYLES[key], label, Icon }
 }

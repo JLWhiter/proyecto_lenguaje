@@ -1,7 +1,7 @@
 import { forwardRef, useId } from 'react'
 import { CalendarRange, Calculator, ChevronDown, ListChecks } from 'lucide-react'
 import TaxAmount, { useAmountsHidden } from './TaxAmount'
-import { MAX_ADDITIONAL_DEDUCTION_UIT, TAX_YEARS, soles } from './taxRules'
+import { MAX_ADDITIONAL_DEDUCTION_UIT, TAX_YEARS, monthsCount, soles } from './taxRules'
 
 const SOURCES = [
   { key: 'movimientos', label: 'Mis ingresos registrados', icon: ListChecks },
@@ -92,7 +92,7 @@ function YearProgress({ year, progress, project, onProjectChange }) {
         <span className="min-w-0">
           <span className="font-semibold text-slate-900">Año en curso:</span> llevas{' '}
           <TaxAmount value={progress.recorded} className="font-semibold text-slate-900" />
-          {months ? ` en ${months} ${months === 1 ? 'mes' : 'meses'} con ingresos.` : ' registrados hasta hoy.'}
+          {months ? ` en ${monthsCount(months)} con ingresos.` : ' registrados hasta hoy.'}
           {canProject ? ' El año aún no termina: elige cómo estimarlo.' : ' El año aún no termina: es un dato parcial.'}
         </span>
       </p>
@@ -138,6 +138,95 @@ function YearProgress({ year, progress, project, onProjectChange }) {
   )
 }
 
+/** Ayuda del ingreso simulado: el monto entendido (si se ve) o qué sumar. */
+function incomeHintText(draftValue, hidden) {
+  if (!hidden && draftValue !== null && draftValue !== undefined) return `${soles(draftValue)} al año, antes de impuestos.`
+  return 'Suma anual de sueldos, gratificaciones y bonos, en soles.'
+}
+
+/** Aviso (si supera el tope de 3 UIT) y ayuda de las deducciones adicionales. */
+function deductionsMessages(maxAdditional, draftValue, hidden) {
+  let warning
+  if (maxAdditional && draftValue > maxAdditional) {
+    warning = hidden ? 'Supera el máximo: se considerarán 3 UIT.' : `Supera el máximo: se considerarán ${soles(maxAdditional)} (3 UIT).`
+  }
+  const hint =
+    maxAdditional && !hidden
+      ? `Máximo 3 UIT = ${soles(maxAdditional)}. Gastos sustentados con comprobante (alquiler, honorarios, restaurantes…).`
+      : 'Gastos sustentados con comprobante (alquiler, honorarios, restaurantes…). Máximo 3 UIT.'
+  return { warning, hint }
+}
+
+/** Etiqueta y ayuda del ingreso con "Mis ingresos registrados": año cerrado, año en curso proyectado o hasta hoy. */
+function registeredCopy(year, progress, projected) {
+  if (progress && projected) {
+    return {
+      label: 'Ingreso anual proyectado',
+      hint: 'Lo que llevas registrado llevado a 12 meses al mismo ritmo. Solo ingresos regulares (p. ej. Salario).',
+    }
+  }
+  if (progress) {
+    return {
+      label: 'Ingresos registrados hasta hoy',
+      hint: 'Solo lo cobrado hasta hoy (ingresos regulares, p. ej. Salario). Como el año no termina, el impuesto final puede ser mayor.',
+    }
+  }
+  return {
+    label: `Ingresos registrados en ${year}`,
+    hint: 'Solo ingresos regulares (p. ej. Salario). No cuentan depósitos, transferencias entre tus cuentas ni ajustes de saldo.',
+  }
+}
+
+/** Selector "Ingreso a considerar": registrados o simulado ("registrados" se bloquea con `lockedReason`). */
+function SourcePicker({ baseId, source, lockedReason, onSourceChange }) {
+  const lockedId = `${baseId}-source-locked`
+  return (
+    <fieldset className="min-w-0">
+      <legend className="text-sm font-semibold text-slate-700">Ingreso a considerar</legend>
+      <div className="mt-1.5 grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
+        {SOURCES.map((option) => {
+          const Icon = option.icon
+          const locked = Boolean(lockedReason) && option.key === 'movimientos'
+          return (
+            <label key={option.key} className={SEGMENT_OPTION}>
+              <input
+                type="radio"
+                name={`${baseId}-source`}
+                value={option.key}
+                checked={source === option.key}
+                disabled={locked}
+                aria-describedby={locked ? lockedId : undefined}
+                onChange={() => onSourceChange(option.key === 'manual')}
+                className="sr-only"
+              />
+              <Icon aria-hidden="true" className="hidden h-4 w-4 shrink-0 sm:block" />
+              <span>{option.label}</span>
+            </label>
+          )
+        })}
+      </div>
+      {lockedReason && (
+        <p id={lockedId} className="mt-1.5 text-xs leading-5 text-slate-600">
+          {lockedReason}
+        </p>
+      )}
+    </fieldset>
+  )
+}
+
+/** Ingreso con "Mis ingresos registrados" (solo lectura): proyectado o registrado según la opción elegida. */
+function RegisteredIncome({ label, hint, value, error }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-sm font-semibold text-slate-700">{label}</p>
+      <p className="mt-1.5 flex h-12 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-base font-semibold text-slate-800 tabular-nums sm:text-sm">
+        {value === null || value === undefined ? '—' : <TaxAmount value={value} />}
+      </p>
+      <FieldMessage hint={hint} error={error} />
+    </div>
+  )
+}
+
 /**
  * Tarjeta de controles: año, origen del ingreso (registrado / simulado), ingreso anual y deducciones.
  * - `errors` trae los errores ya resueltos por campo (validación local o 400 de la API).
@@ -152,34 +241,9 @@ export default function TaxControls({ params, uit, registeredIncome, progress, l
   const yearOptions = yearFromUrl && !TAX_YEARS.includes(yearFromUrl) ? [...TAX_YEARS, yearFromUrl].sort((a, b) => b - a) : TAX_YEARS
   const maxAdditional = uit ? MAX_ADDITIONAL_DEDUCTION_UIT * uit : null
   const source = simulate ? 'manual' : 'movimientos'
-  const lockedId = `${baseId}-source-locked`
   const projected = Boolean(progress && progress.projected !== null && params.project)
-
-  const incomeHint =
-    !hidden && params.incomeDraftValue !== null && params.incomeDraftValue !== undefined
-      ? `${soles(params.incomeDraftValue)} al año, antes de impuestos.`
-      : 'Suma anual de sueldos, gratificaciones y bonos, en soles.'
-
-  const deductionsWarning =
-    maxAdditional && params.deductionsDraftValue > maxAdditional
-      ? hidden
-        ? 'Supera el máximo: se considerarán 3 UIT.'
-        : `Supera el máximo: se considerarán ${soles(maxAdditional)} (3 UIT).`
-      : undefined
-  const deductionsHint =
-    maxAdditional && !hidden
-      ? `Máximo 3 UIT = ${soles(maxAdditional)}. Gastos sustentados con comprobante (alquiler, honorarios, restaurantes…).`
-      : 'Gastos sustentados con comprobante (alquiler, honorarios, restaurantes…). Máximo 3 UIT.'
-
-  let registeredLabel = `Ingresos registrados en ${year}`
-  let registeredHint = 'Solo ingresos regulares (p. ej. Salario). No cuentan depósitos, transferencias entre tus cuentas ni ajustes de saldo.'
-  if (progress && projected) {
-    registeredLabel = 'Ingreso anual proyectado'
-    registeredHint = 'Lo que llevas registrado llevado a 12 meses al mismo ritmo. Solo ingresos regulares (p. ej. Salario).'
-  } else if (progress) {
-    registeredLabel = 'Ingresos registrados hasta hoy'
-    registeredHint = 'Solo lo cobrado hasta hoy (ingresos regulares, p. ej. Salario). Como el año no termina, el impuesto final puede ser mayor.'
-  }
+  const deductions = deductionsMessages(maxAdditional, params.deductionsDraftValue, hidden)
+  const registered = registeredCopy(year, progress, projected)
 
   return (
     <section aria-label="Datos para el cálculo" className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
@@ -208,36 +272,7 @@ export default function TaxControls({ params, uit, registeredIncome, progress, l
           <FieldMessage id={`${baseId}-year-message`} error={errors.year} />
         </div>
 
-        <fieldset className="min-w-0">
-          <legend className="text-sm font-semibold text-slate-700">Ingreso a considerar</legend>
-          <div className="mt-1.5 grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
-            {SOURCES.map((option) => {
-              const Icon = option.icon
-              const locked = Boolean(lockedReason) && option.key === 'movimientos'
-              return (
-                <label key={option.key} className={SEGMENT_OPTION}>
-                  <input
-                    type="radio"
-                    name={`${baseId}-source`}
-                    value={option.key}
-                    checked={source === option.key}
-                    disabled={locked}
-                    aria-describedby={locked ? lockedId : undefined}
-                    onChange={() => onSourceChange(option.key === 'manual')}
-                    className="sr-only"
-                  />
-                  <Icon aria-hidden="true" className="hidden h-4 w-4 shrink-0 sm:block" />
-                  <span>{option.label}</span>
-                </label>
-              )
-            })}
-          </div>
-          {lockedReason && (
-            <p id={lockedId} className="mt-1.5 text-xs leading-5 text-slate-600">
-              {lockedReason}
-            </p>
-          )}
-        </fieldset>
+        <SourcePicker baseId={baseId} source={source} lockedReason={lockedReason} onSourceChange={onSourceChange} />
 
         {!simulate && progress && progress.recorded > 0 && (
           <YearProgress year={year} progress={progress} project={params.project} onProjectChange={params.setProject} />
@@ -252,16 +287,10 @@ export default function TaxControls({ params, uit, registeredIncome, progress, l
             onChange={params.setIncomeDraft}
             placeholder="Ej. 60,000"
             error={errors.income}
-            hint={incomeHint}
+            hint={incomeHintText(params.incomeDraftValue, hidden)}
           />
         ) : (
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-700">{registeredLabel}</p>
-            <p className="mt-1.5 flex h-12 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-base font-semibold text-slate-800 tabular-nums sm:text-sm">
-              {registeredIncome === null || registeredIncome === undefined ? '—' : <TaxAmount value={registeredIncome} />}
-            </p>
-            <FieldMessage hint={registeredHint} error={errors.income} />
-          </div>
+          <RegisteredIncome label={registered.label} hint={registered.hint} value={registeredIncome} error={errors.income} />
         )}
 
         <AmountInput
@@ -271,8 +300,8 @@ export default function TaxControls({ params, uit, registeredIncome, progress, l
           onChange={params.setDeductionsDraft}
           placeholder="0.00"
           error={errors.deductions}
-          warning={deductionsWarning}
-          hint={deductionsHint}
+          warning={deductions.warning}
+          hint={deductions.hint}
         />
       </div>
     </section>

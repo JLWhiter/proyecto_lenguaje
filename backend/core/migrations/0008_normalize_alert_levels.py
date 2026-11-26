@@ -18,21 +18,21 @@ LEGACY_LEVELS = {"danger": "rojo", "warning": "amber", "info": "indigo", "succes
 
 
 def normalize_levels(apps, schema_editor):
-    FinanceAlert = apps.get_model("core", "FinanceAlert")
+    alert_model = apps.get_model("core", "FinanceAlert")
     database = schema_editor.connection.alias
-    alerts = list(FinanceAlert.objects.using(database).only("id", "level"))
+    alerts = list(alert_model.objects.using(database).only("id", "level"))
     for alert in alerts:
         alert.level = LEVELS.get((alert.level or "").strip().casefold(), "info")
         alert.severity = SEVERITY[alert.level]
         alert.rule = "other"
-    FinanceAlert.objects.using(database).bulk_update(alerts, ["level", "severity", "rule"], batch_size=500)
+    alert_model.objects.using(database).bulk_update(alerts, ["level", "severity", "rule"], batch_size=500)
 
 
 def restore_legacy_levels(apps, schema_editor):
-    FinanceAlert = apps.get_model("core", "FinanceAlert")
+    alert_model = apps.get_model("core", "FinanceAlert")
     database = schema_editor.connection.alias
     for level, legacy in LEGACY_LEVELS.items():
-        FinanceAlert.objects.using(database).filter(level=level).update(level=legacy)
+        alert_model.objects.using(database).filter(level=level).update(level=legacy)
 
 
 class Migration(migrations.Migration):

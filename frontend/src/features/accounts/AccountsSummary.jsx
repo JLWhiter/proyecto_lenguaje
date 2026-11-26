@@ -8,13 +8,32 @@ import Amount from './Amount'
 import { useBalanceVariation } from './useAccounts'
 
 function percentOf(part, total) {
-  if (!(total > 0)) return 0
+  if (total <= 0) return 0
   return Math.min(100, Math.max(0, (part / total) * 100))
 }
 
 function formatPct(value) {
   if (value > 0 && value < 1) return '<1%'
   return `${Math.round(value)}%`
+}
+
+const TREND_CHIPS = {
+  up: { className: 'bg-emerald-50 text-emerald-700', Icon: TrendingUp },
+  down: { className: 'bg-red-50 text-red-700', Icon: TrendingDown },
+  flat: { className: 'bg-slate-100 text-slate-600', Icon: Minus },
+}
+
+function trendOf(value) {
+  if (value > 0) return 'up'
+  return value < 0 ? 'down' : 'flat'
+}
+
+/** '+13.6%', '−2%' o '0%' (`null` si no hay porcentaje). */
+function formatPctChange(pct) {
+  if (pct === null) return null
+  if (pct === 0) return '0%'
+  const sign = pct > 0 ? '+' : '−'
+  return `${sign}${Math.abs(pct).toLocaleString('es-PE', { maximumFractionDigits: 1 })}%`
 }
 
 /** "+13.6% vs. cierre de octubre" con el dato real del resumen del mes actual (oculto si no hay con qué comparar). */
@@ -31,13 +50,8 @@ function BalanceVariation({ month }) {
   const delta = showAmounts ? variation.data.delta : null
   if (pct === null && delta === null) return null
 
-  const trend = (pct ?? delta) > 0 ? 'up' : (pct ?? delta) < 0 ? 'down' : 'flat'
-  const chip = {
-    up: { className: 'bg-emerald-50 text-emerald-700', Icon: TrendingUp },
-    down: { className: 'bg-red-50 text-red-700', Icon: TrendingDown },
-    flat: { className: 'bg-slate-100 text-slate-600', Icon: Minus },
-  }[trend]
-  const pctText = pct === null ? null : pct === 0 ? '0%' : `${pct > 0 ? '+' : '−'}${Math.abs(pct).toLocaleString('es-PE', { maximumFractionDigits: 1 })}%`
+  const chip = TREND_CHIPS[trendOf(pct ?? delta)]
+  const pctText = formatPctChange(pct)
 
   return (
     <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
@@ -105,11 +119,9 @@ export default function AccountsSummary({ data, count, month }) {
 
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-slate-700">¿Dónde está tu dinero?</h3>
-          <div
-            className="mt-3 flex h-3 overflow-hidden rounded-full bg-slate-100"
-            role="img"
-            aria-label={`Bancos y billeteras ${formatPct(liquidShare)}, efectivo ${formatPct(cashShare)}`}
-          >
+          {/* La barra es decorativa; el reparto se lee en este texto (y en la lista de abajo). */}
+          <p className="sr-only">{`Bancos y billeteras ${formatPct(liquidShare)}, efectivo ${formatPct(cashShare)}`}</p>
+          <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
             {base > 0 && (
               <>
                 <span className="h-full bg-emerald-500" style={{ width: `${liquidShare}%` }} />

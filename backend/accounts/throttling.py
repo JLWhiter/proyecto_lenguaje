@@ -4,12 +4,21 @@ from rest_framework.exceptions import Throttled
 from rest_framework.settings import api_settings
 from rest_framework.throttling import ScopedRateThrottle
 
+# Throttle scopes: the views' ``throttle_scope`` and the keys of
+# REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] (config/settings.py). They name
+# rate limits, they are not credentials.
+LOGIN_SCOPE = "login"
+REGISTER_SCOPE = "register"
+RECOVERY_SCOPE = "password_reset"
+VERIFY_RESEND_SCOPE = "verify_resend"
+CREDENTIAL_CHANGE_SCOPE = "password_change"
+
 THROTTLE_MESSAGES = {
-    "login": "Demasiados intentos de inicio de sesión.",
-    "register": "Demasiados intentos de registro desde esta conexión.",
-    "password_reset": "Demasiadas solicitudes de recuperación de contraseña.",
-    "verify_resend": "Ya solicitaste varios enlaces de verificación.",
-    "password_change": "Demasiados intentos de cambio de contraseña.",
+    LOGIN_SCOPE: "Demasiados intentos de inicio de sesión.",
+    REGISTER_SCOPE: "Demasiados intentos de registro desde esta conexión.",
+    RECOVERY_SCOPE: "Demasiadas solicitudes de recuperación de contraseña.",
+    VERIFY_RESEND_SCOPE: "Ya solicitaste varios enlaces de verificación.",
+    CREDENTIAL_CHANGE_SCOPE: "Demasiados intentos de cambio de contraseña.",
 }
 DEFAULT_THROTTLE_MESSAGE = "Demasiadas solicitudes."
 

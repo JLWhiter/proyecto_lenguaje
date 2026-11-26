@@ -1,6 +1,17 @@
 // Pruebas de las reglas del Impuesto a la Renta que usa la pantalla Impuestos.
 import { describe, expect, it } from 'vitest'
-import { BRACKETS, UIT_BY_YEAR, buildBrackets, parseAmount, parseYear, resultMode, sameAmount, splitDeductions } from './taxRules'
+import {
+  BRACKETS,
+  UIT_BY_YEAR,
+  buildBrackets,
+  monthsCount,
+  parseAmount,
+  parseYear,
+  resultMode,
+  sameAmount,
+  splitDeductions,
+  yearProgress,
+} from './taxRules'
 
 describe('parseAmount', () => {
   it('interpreta montos con separador de miles y símbolo de soles', () => {
@@ -12,6 +23,10 @@ describe('parseAmount', () => {
     expect(parseAmount('  ').empty).toBe(true)
     expect(parseAmount('-50').error).toMatch(/negativo/)
     expect(parseAmount('12a').error).toMatch(/solo números/)
+    expect(parseAmount('1.2.3').error).toMatch(/solo números/)
+    expect(parseAmount('.').error).toMatch(/solo números/)
+    expect(parseAmount('.5')).toEqual({ value: 0.5, text: '0.5' })
+    expect(parseAmount('60000.')).toEqual({ value: 60000, text: '60000' })
     expect(parseAmount('10.555').error).toMatch(/2 decimales/)
     expect(parseAmount('1234567890123').error).toMatch(/demasiado grande/)
   })
@@ -59,6 +74,40 @@ describe('buildBrackets', () => {
     expect(brackets[0]).toMatchObject({ reached: true, fill: 1, impuesto: 2140 })
     expect(brackets[1].fill).toBeCloseTo(26750 / 80250)
     expect(brackets[2]).toMatchObject({ reached: false, fill: 0, desde: 20 * 5350 })
+  })
+
+  it('sin datos de la API usa la escala local; el último tramo no tiene tope', () => {
+    const brackets = buildBrackets({ uit: '5000' })
+    expect(brackets[0]).toMatchObject({ desde: 0, hasta: 25000, tasa: 8, base: 0, reached: false, fill: 0 })
+    expect(brackets[4]).toMatchObject({ desde: 225000, hasta: null })
+  })
+
+  it('el último tramo alcanzado (sin tope) queda lleno', () => {
+    const tramos = [{}, {}, {}, {}, { desde: '240750', hasta: null, tasa: '30', base: '1000', impuesto: '300' }]
+    expect(buildBrackets({ uit: '5350', tramos }).at(-1)).toMatchObject({ hasta: null, reached: true, fill: 1 })
+  })
+})
+
+describe('textos', () => {
+  it('monthsCount usa singular y plural', () => {
+    expect(monthsCount(1)).toBe('1 mes')
+    expect(monthsCount(7)).toBe('7 meses')
+  })
+})
+
+describe('yearProgress', () => {
+  it('solo aplica al año en curso con ingresos registrados', () => {
+    expect(yearProgress(null)).toBeNull()
+    expect(yearProgress({ fuente: 'manual' })).toBeNull()
+    expect(yearProgress({ fuente: 'movimientos', anio_en_curso: false })).toBeNull()
+    expect(
+      yearProgress({ fuente: 'movimientos', anio_en_curso: true, ingreso_registrado: '30000', meses_con_ingresos: 6, ingreso_proyectado: '60000' }),
+    ).toEqual({ recorded: 30000, months: 6, projected: 60000 })
+    expect(yearProgress({ fuente: 'movimientos', anio_en_curso: true, ingreso_bruto: '1000' }, 2400)).toEqual({
+      recorded: 1000,
+      months: null,
+      projected: 2400,
+    })
   })
 })
 

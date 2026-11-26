@@ -27,7 +27,7 @@ export function useBalanceVariation(month) {
     ({ signal }) =>
       dashboardApi.summary({ mes: month, signal }).then((data) => {
         const evolution = Array.isArray(data?.evolucion_saldo) ? data.evolucion_saldo : []
-        const last = evolution[evolution.length - 1]
+        const last = evolution.at(-1)
         const previous = evolution[evolution.length - 2]
         const pct = typeof data?.balance_variacion_pct === 'number' ? data.balance_variacion_pct : null
         const delta =

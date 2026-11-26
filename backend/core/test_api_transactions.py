@@ -6,11 +6,10 @@ from decimal import Decimal
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from .models import FinanceTransaction
+from .models import FinanceTransaction, MovementKind
 from .periods import current_period, local_today
 from .testing import API, FinanceAPITestCase, local_datetime
 
-Kind = FinanceTransaction.Kind
 
 
 class CreateTransactionTests(FinanceAPITestCase):
@@ -39,7 +38,7 @@ class CreateTransactionTests(FinanceAPITestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["detail"], "La cuenta Principal no tiene saldo suficiente.")
-        self.assertFalse(FinanceTransaction.objects.filter(kind=Kind.REGULAR).exists())
+        self.assertFalse(FinanceTransaction.objects.filter(kind=MovementKind.REGULAR).exists())
         self.assert_balance(self.account, "500.00")
 
     def test_future_dates_are_rejected(self):
@@ -252,7 +251,7 @@ class DeleteTransactionTests(FinanceAPITestCase):
         self.assert_balance(self.wallet, "0.00")
 
     def test_opening_and_adjustment_cannot_be_deleted(self):
-        opening = self.main.transactions.get(kind=Kind.OPENING)
+        opening = self.main.transactions.get(kind=MovementKind.OPENING)
         adjustment = self.main.adjust_balance(Decimal("80.00"))
 
         for movement in (opening, adjustment):
@@ -280,7 +279,7 @@ class TransferAndDepositTests(FinanceAPITestCase):
         self.assert_balance(self.destination, "70.00")
         debit, credit = response.data["movimientos"]
         self.assertEqual((debit["monto"], credit["monto"]), (Decimal("-60.00"), Decimal("60.00")))
-        legs = FinanceTransaction.objects.filter(kind=Kind.TRANSFER)
+        legs = FinanceTransaction.objects.filter(kind=MovementKind.TRANSFER)
         self.assertEqual(legs.count(), 2)
         self.assertEqual(len({leg.transfer_group for leg in legs}), 1)
         self.assertEqual(len({leg.occurred_at for leg in legs}), 1)
@@ -291,7 +290,7 @@ class TransferAndDepositTests(FinanceAPITestCase):
 
         self.assertEqual((same.status_code, same.data["detail"]), (400, "Selecciona dos cuentas distintas."))
         self.assertEqual((too_much.status_code, too_much.data["detail"]), (400, "La cuenta Origen no tiene saldo suficiente."))
-        self.assertFalse(FinanceTransaction.objects.filter(kind=Kind.TRANSFER).exists())
+        self.assertFalse(FinanceTransaction.objects.filter(kind=MovementKind.TRANSFER).exists())
 
     def test_deposit_counts_as_income(self):
         response = self.client.post(

@@ -50,28 +50,34 @@ export default function AccountsPage() {
     })
   }
 
+  /** Cuenta con saldo: se explica por qué no se puede eliminar y se ofrece transferir o actualizar el saldo. */
+  async function askToClearBalance(account, balance) {
+    const moveMoney = canTransfer && balance > 0
+    const amountText = showAmounts ? `tiene un saldo de ${money(balance)}` : 'todavía tiene saldo'
+    const nextStep = moveMoney ? 'transfiere ese dinero a otra de tus cuentas' : 'actualiza su saldo a 0 si ese dinero ya no existe'
+    const ok = await confirm({
+      title: 'Primero deja el saldo en 0',
+      message: `«${account.nombre}» ${amountText}. Solo puedes eliminar una cuenta con saldo 0: ${nextStep} y vuelve a intentarlo.`,
+      confirmLabel: moveMoney ? 'Transferir saldo' : 'Actualizar saldo',
+      cancelLabel: 'Ahora no',
+    })
+    if (!ok) return
+    if (moveMoney) openTransfer(account, { amount: balance.toFixed(2) })
+    else setDialog({ type: 'balance', account })
+  }
+
   async function requestDelete(account) {
     const balance = toNumber(account.saldo)
-
     // Regla del backend: solo se elimina con saldo 0. Lo explicamos antes de intentarlo
     // y ofrecemos el camino para dejarlo en 0.
     if (Math.abs(balance) >= 0.005) {
-      const moveMoney = canTransfer && balance > 0
-      const amountText = showAmounts ? `tiene un saldo de ${money(balance)}` : 'todavía tiene saldo'
-      const ok = await confirm({
-        title: 'Primero deja el saldo en 0',
-        message: `«${account.nombre}» ${amountText}. Solo puedes eliminar una cuenta con saldo 0: ${
-          moveMoney ? 'transfiere ese dinero a otra de tus cuentas' : 'actualiza su saldo a 0 si ese dinero ya no existe'
-        } y vuelve a intentarlo.`,
-        confirmLabel: moveMoney ? 'Transferir saldo' : 'Actualizar saldo',
-        cancelLabel: 'Ahora no',
-      })
-      if (!ok) return
-      if (moveMoney) openTransfer(account, { amount: balance.toFixed(2) })
-      else setDialog({ type: 'balance', account })
+      await askToClearBalance(account, balance)
       return
     }
+    await deleteAccount(account)
+  }
 
+  async function deleteAccount(account) {
     const ok = await confirm({
       title: `¿Eliminar «${account.nombre}»?`,
       message:
@@ -106,7 +112,10 @@ export default function AccountsPage() {
     else if (type === 'balance') setDialog({ type: 'balance', account })
     else if (type === 'deposit') setDialog({ type: 'deposit', initialValues: { account_id: String(account.id) } })
     else if (type === 'transfer') openTransfer(account)
-    else if (type === 'delete') requestDelete(account)
+    else if (type === 'delete') {
+      // La promesa se maneja: un error inesperado (fuera de la llamada a la API) se avisa en vez de perderse.
+      requestDelete(account).catch((error) => toast.error(error?.message || 'No se pudo eliminar la cuenta.'))
+    }
   }
 
   return (
@@ -140,7 +149,7 @@ export default function AccountsPage() {
       )}
 
       {ready && accounts.error && (
-        <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <output className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
           <span>No pudimos actualizar tus cuentas; puede que veas datos de hace un momento.</span>
           <button
             type="button"
@@ -150,7 +159,7 @@ export default function AccountsPage() {
             <RotateCw className="h-4 w-4" aria-hidden="true" />
             Reintentar
           </button>
-        </div>
+        </output>
       )}
 
       {isEmpty && (
@@ -223,7 +232,8 @@ export default function AccountsPage() {
 
 function AccountsSkeleton() {
   return (
-    <div className="space-y-6" role="status" aria-label="Cargando cuentas">
+    // <output> = región de estado nativa (role="status"); `block` porque <output> es inline.
+    <output className="block space-y-6" aria-label="Cargando cuentas">
       <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="grid gap-6 xl:grid-cols-2">
           <div>
@@ -261,6 +271,6 @@ function AccountsSkeleton() {
         </div>
       ))}
       <span className="sr-only">Cargando cuentas</span>
-    </div>
+    </output>
   )
 }

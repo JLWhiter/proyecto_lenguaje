@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, Bell, CheckCircle2, Gauge, Info, OctagonAlert, Scale, Target } from 'lucide-react'
+import { Activity, AlertTriangle, Bell, CheckCircle2, Flag, Gauge, Info, OctagonAlert, Scale, Target, Trophy } from 'lucide-react'
 import { parseCountLabel } from '../../components/ui'
 import { formatDate, formatTime } from '../../lib/format'
 import { APP_TIME_ZONE, currentMonth, isValidMonth, monthLabel, shiftMonth } from '../../lib/period'
@@ -54,6 +54,8 @@ export const ALERT_RULES = {
   budget_projection: { label: 'Ritmo de gasto', Icon: Gauge },
   atypical_expense: { label: 'Gasto inusual', Icon: Activity },
   negative_month: { label: 'Balance mensual', Icon: Scale },
+  goal_behind: { label: 'Meta atrasada', Icon: Flag },
+  goal_reached: { label: 'Meta alcanzada', Icon: Trophy },
   other: { label: 'General', Icon: Bell },
 }
 
@@ -122,6 +124,22 @@ function toTarget(pathname, params) {
   return { pathname, search: search ? `?${search}` : '' }
 }
 
+/** Presupuestos del mes con `presupuesto=<id>` (+ `accion=editar` si la acción es «Ajustar presupuesto»). */
+function budgetTarget(action, params) {
+  if (hasValue(action.id)) {
+    params.set('presupuesto', String(action.id))
+    if (normalize(action.label) === EDIT_BUDGET_LABEL) params.set('accion', 'editar')
+  }
+  return toTarget('/app/presupuestos', params)
+}
+
+/** Metas de ahorro con `meta=<id>` (la pantalla resalta esa meta). Las metas no dependen del mes. */
+function goalTarget(action) {
+  const params = new URLSearchParams()
+  if (hasValue(action.id)) params.set('meta', String(action.id))
+  return toTarget('/app/metas', params)
+}
+
 /**
  * Destino de la acción de una alerta. Única fuente para el Centro de Alertas (`accion`) y el Resumen
  * (`accion_detalle`). El mes es el de la acción o, si falta, el primero válido de `months`.
@@ -129,21 +147,17 @@ function toTarget(pathname, params) {
  * - transaction (con id) → /app/movimientos?mes=<mes>&categoria=<categoria>&tipo=GASTO&movimiento=<id>
  *   (Movimientos resalta ese movimiento; sin `categoria` se omite ese filtro)
  * - transactions → /app/movimientos?mes=<mes>
+ * - goal → /app/metas?meta=<id>
  * Devuelve `null` si la acción no es navegable.
  */
 export function alertActionTarget(action, ...months) {
   if (!action || typeof action !== 'object') return null
+  if (action.type === 'goal') return goalTarget(action)
   const month = [action.mes, ...months].find(isValidMonth)
   const params = new URLSearchParams()
   if (month) params.set('mes', month)
 
-  if (action.type === 'budget') {
-    if (hasValue(action.id)) {
-      params.set('presupuesto', String(action.id))
-      if (normalize(action.label) === EDIT_BUDGET_LABEL) params.set('accion', 'editar')
-    }
-    return toTarget('/app/presupuestos', params)
-  }
+  if (action.type === 'budget') return budgetTarget(action, params)
   if (action.type === 'transaction' && hasValue(action.id)) {
     if (hasValue(action.categoria)) params.set('categoria', String(action.categoria).trim())
     params.set('tipo', 'GASTO')
@@ -195,18 +209,76 @@ export function groupByPeriod(items, current = currentMonth()) {
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(alert)
   }
-  const previous = shiftMonth(current, -1)
   return [...groups.entries()]
     .sort(([a], [b]) => b.localeCompare(a))
     .map(([key, list]) => ({
       key,
       label: monthLabel(key),
-      note: key === current ? 'Mes en curso' : key === previous ? 'Mes anterior' : 'Mes cerrado',
+      note: periodNote(key, current),
       current: key === current,
       items: list,
     }))
 }
 
+function periodNote(key, current) {
+  if (key === current) return 'Mes en curso'
+  return key === shiftMonth(current, -1) ? 'Mes anterior' : 'Mes cerrado'
+}
+
 export function plural(count, singular, pluralText) {
   return `${count} ${count === 1 ? singular : pluralText}`
+}
+
+// --- Lista con cambios locales ------------------------------------------------------
+
+const NO_ENTRIES = {}
+
+function insertAt(list, index, item) {
+  return [...list.slice(0, index), item, ...list.slice(index)]
+}
+
+/**
+ * Estado de parches tras aplicar `item` (respuesta de una acción) sobre los datos `base`.
+ * Si `base` cambió (llegó una recarga del servidor), los parches anteriores se descartan.
+ * `position`: posición donde volver a insertar la alerta (p. ej. tras "Deshacer").
+ */
+export function withPatch(current, base, item, position) {
+  const same = current.base === base
+  const items = { ...(same ? current.items : NO_ENTRIES), [item.id]: item }
+  const inserts = { ...(same ? current.inserts : NO_ENTRIES) }
+  if (position !== undefined) inserts[item.id] = position
+  return { base, items, inserts }
+}
+
+/**
+ * Lista que se muestra: la del servidor con las alertas devueltas por acciones recientes (`patches`, por id),
+ * las restauradas con "Deshacer" que la respuesta aún no trae (`inserts`: id → posición) y, en "Activas",
+ * sin las que dejaron de estar activas salvo la que se puede deshacer (`undoEntry`).
+ */
+export function mergeAlertItems({ serverItems, patches, inserts, estado, undoEntry }) {
+  let list = serverItems.map((item) => patches[item.id] ?? item)
+  for (const [id, index] of Object.entries(inserts)) {
+    const item = patches[id]
+    if (item && !list.some((entry) => entry.id === item.id)) list = insertAt(list, index, item)
+  }
+  if (estado !== ACTIVE_ALERTS) return list
+
+  const undoId = undoEntry?.alert.id
+  list = list.filter((item) => item.activa !== false || item.id === undoId)
+  if (undoEntry && !list.some((item) => item.id === undoId)) {
+    list = insertAt(list, Math.min(undoEntry.index, list.length), undoEntry.alert)
+  }
+  return list
+}
+
+/** Aviso al posponer o descartar una alerta desde "Activas" (`until`: texto de `untilText`). */
+export function leftListMessage(action, until) {
+  if (action !== 'snooze') return 'Alerta descartada'
+  return until ? `Alerta pospuesta hasta ${until}` : 'Alerta pospuesta'
+}
+
+/** Mensaje del diálogo "Silenciar todo" para `count` alertas activas. */
+export function silenceAllMessage(count) {
+  const what = count === 1 ? 'tu alerta activa' : `tus ${count} alertas activas`
+  return `Se ocultarán por ${SILENCE_HOURS} horas ${what}. Después volverán a aparecer si siguen vigentes; antes puedes restaurarlas desde «Todas».`
 }

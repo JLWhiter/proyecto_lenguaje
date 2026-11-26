@@ -20,6 +20,6 @@ export function similarCategory(typed, names) {
   const text = String(typed ?? '').trim()
   const key = looseCategoryKey(text)
   if (!key || !Array.isArray(names)) return null
-  if (names.some((name) => name === text)) return null
+  if (names.includes(text)) return null
   return names.find((name) => looseCategoryKey(name) === key) ?? null
 }
