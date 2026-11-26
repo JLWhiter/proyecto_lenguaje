@@ -151,17 +151,19 @@ Errores: las reglas de negocio responden `400 {"detail": "..."}` y las validacio
 
 ## Pruebas
 
-Backend (unas 300 pruebas):
+Backend (347 pruebas):
 
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe manage.py test
 ```
 
-Frontend:
+Frontend (67 pruebas con Vitest sobre formato, validaciones, períodos, presupuestos,
+impuestos y movimientos):
 
 ```powershell
 cd frontend
+npm test
 npm run build
 ```
 
