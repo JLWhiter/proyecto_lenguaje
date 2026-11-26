@@ -266,7 +266,7 @@ class SummaryAndBudgetSheetTests(unittest.TestCase):
 
         self.assertEqual(book.sheetnames, [MOVEMENTS_SHEET, SUMMARY_SHEET])
         labels = [sheet.cell(row=row, column=2).value for row in range(1, sheet.max_row + 1)]
-        self.assertTrue({"Setiembre 2026", "Octubre 2026", "Noviembre 2026"} <= set(labels))
+        self.assertLessEqual({"Setiembre 2026", "Octubre 2026", "Noviembre 2026"}, set(labels))
         self.assertEqual(len(sheet._charts), 2)
         self.assertEqual(book[MOVEMENTS_SHEET]["A2"].value, "Historial completo: Setiembre 2026 – Noviembre 2026")
 

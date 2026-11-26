@@ -426,7 +426,8 @@ class FinanceAlert(models.Model):
     transaction = models.ForeignKey(FinanceTransaction, null=True, blank=True, on_delete=models.CASCADE, related_name="alerts")
     # NULL (no "") en las alertas sin clave: la restricción única (owner, dedupe_key) admite
     # varios NULL pero no varios "" (el mismo caso que unique=True + blank=True en Django).
-    dedupe_key = models.CharField(max_length=80, null=True, blank=True)  # NOSONAR: null=True necesario por la restricción única
+    # Por eso se suprime la regla S6553 ("null=True en campos de texto") en esta línea.
+    dedupe_key = models.CharField(max_length=80, null=True, blank=True)  # NOSONAR
     title = models.CharField(max_length=160)
     description = models.TextField()
     action_label = models.CharField(max_length=80, blank=True)
