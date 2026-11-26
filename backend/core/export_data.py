@@ -10,7 +10,7 @@ from django.db.models import Count, Sum
 from django.utils import timezone
 
 from .finance import budget_items, serialize_transaction
-from .models import FinanceAccount, FinanceTransaction
+from .models import FinanceAccount, FinanceTransaction, MovementType
 from .transaction_filters import filter_transactions
 from .xlsx_export import ZERO, ExportReport
 
@@ -39,7 +39,7 @@ def filter_labels(filters):
     """Filtros aplicados como pares (etiqueta, valor) para el encabezado del Excel."""
     account = filters["account"]
     labels = (
-        ("Tipo", FinanceTransaction.Type(filters["tipo"]).label if filters["tipo"] else ""),
+        ("Tipo", MovementType(filters["tipo"]).label if filters["tipo"] else ""),
         ("Categoría", filters["categoria"].strip()),
         ("Cuenta", account.name if account is not None else ""),
         ("Búsqueda", filters["search"].strip()),

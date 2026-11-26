@@ -176,8 +176,6 @@ class SavingsGoal(models.Model):
 class GoalContribution(models.Model):
     """Aporte (dinero que se separa) o retiro (dinero que se usa) de una meta, con monto positivo."""
 
-    Kind = ContributionKind
-
     goal = models.ForeignKey(SavingsGoal, on_delete=models.CASCADE, related_name="contributions")
     kind = models.CharField(max_length=6, choices=ContributionKind.choices, default=ContributionKind.DEPOSIT)
     amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(MIN_AMOUNT)])

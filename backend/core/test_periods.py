@@ -7,12 +7,14 @@ import unittest
 from datetime import date
 
 from core.periods import (
+    PeriodTiming,
     day_title,
     days_in_period,
     days_remaining,
     first_day,
     period_label,
     period_of,
+    period_timing,
     shift_month,
     short_date,
 )
@@ -39,6 +41,15 @@ class PeriodTests(unittest.TestCase):
         self.assertEqual(days_remaining("2026-11", date(2026, 11, 30)), 1)
         self.assertEqual(days_remaining("2026-10", TODAY), 0)
         self.assertEqual(days_remaining("2026-12", TODAY), 31)
+
+    def test_period_timing_compares_year_and_month(self):
+        self.assertIs(period_timing("2026-10", TODAY), PeriodTiming.PAST)
+        self.assertIs(period_timing("2026-11", TODAY), PeriodTiming.CURRENT)
+        self.assertIs(period_timing("2026-12", TODAY), PeriodTiming.FUTURE)
+        # Cambio de año: diciembre ya cerró en enero y enero aún no empieza en diciembre.
+        self.assertIs(period_timing("2025-12", date(2026, 1, 1)), PeriodTiming.PAST)
+        self.assertIs(period_timing("2027-01", date(2026, 12, 31)), PeriodTiming.FUTURE)
+        self.assertIs(period_timing("2026-01", date(2026, 1, 31)), PeriodTiming.CURRENT)
 
     def test_spanish_labels(self):
         self.assertEqual(period_label("2026-11"), "Noviembre 2026")

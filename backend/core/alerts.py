@@ -36,7 +36,7 @@ from django.db.models import TextChoices
 
 from .budgets import CAUTION, CRITICAL, EXCEEDED, budget_state, projected_spending, usage_percentage
 from .categories import category_key
-from .money import CURRENCY_SYMBOLS, money  # noqa: F401  (money se reexporta para las pruebas)
+from .money import money
 from .periods import days_remaining, first_day, period_label, period_of, shift_month, short_date
 
 ZERO = Decimal("0.00")

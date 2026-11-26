@@ -29,6 +29,12 @@ def first_matching(records, field, value, key=normalize_text):
     return next((record for record in records if key(getattr(record, field)) == target), None)
 
 
+# Nombre (y categoría) de los movimientos que registra el propio sistema.
+DEPOSIT_LABEL = "Depósito"
+ADJUSTMENT_LABEL = "Ajuste de saldo"
+OPENING_LABEL = "Saldo inicial"
+
+
 class MovementType(models.TextChoices):
     INCOME = "INGRESO", "Ingreso"
     EXPENSE = "GASTO", "Gasto"
@@ -37,9 +43,9 @@ class MovementType(models.TextChoices):
 class MovementKind(models.TextChoices):
     REGULAR = "REGULAR", "Movimiento"
     TRANSFER = "TRANSFER", "Transferencia"
-    DEPOSIT = "DEPOSIT", "Depósito"
-    ADJUSTMENT = "ADJUSTMENT", "Ajuste de saldo"
-    OPENING = "OPENING", "Saldo inicial"
+    DEPOSIT = "DEPOSIT", DEPOSIT_LABEL
+    ADJUSTMENT = "ADJUSTMENT", ADJUSTMENT_LABEL
+    OPENING = "OPENING", OPENING_LABEL
 
 
 class FinanceAccountQuerySet(models.QuerySet):
@@ -93,12 +99,12 @@ class FinanceAccount(models.Model):
             )
             if opening_balance > 0:
                 account.deposit(
-                    opening_balance, name="Saldo inicial", category="Saldo inicial",
+                    opening_balance, name=OPENING_LABEL, category=OPENING_LABEL,
                     kind=MovementKind.OPENING, occurred_at=opened_at,
                 )
         return account
 
-    def deposit(self, amount, *, name="Depósito", category="Depósito", kind=MovementKind.DEPOSIT, occurred_at=None, transfer_group=None):
+    def deposit(self, amount, *, name=DEPOSIT_LABEL, category=DEPOSIT_LABEL, kind=MovementKind.DEPOSIT, occurred_at=None, transfer_group=None):
         """Ingresa ``amount`` a la cuenta y registra el movimiento de ingreso."""
         return self._record(
             MovementType.INCOME, amount, name=name, category=category, kind=kind,
@@ -141,7 +147,7 @@ class FinanceAccount(models.Model):
         """
         self.refresh_from_db(fields=["balance"])
         difference = new_balance - self.balance
-        adjustment = {"name": "Ajuste de saldo", "category": "Ajuste de saldo", "kind": MovementKind.ADJUSTMENT, "occurred_at": occurred_at}
+        adjustment = {"name": ADJUSTMENT_LABEL, "category": ADJUSTMENT_LABEL, "kind": MovementKind.ADJUSTMENT, "occurred_at": occurred_at}
         if difference > 0:
             return self.deposit(difference, **adjustment)
         if difference < 0:
@@ -223,8 +229,6 @@ class FinanceTransaction(models.Model):
     - TRANSFER, ADJUSTMENT, OPENING: solo mueven saldos; no son ingresos ni gastos.
     """
 
-    Type = MovementType
-    Kind = MovementKind
     SUMMARY_KINDS = (MovementKind.REGULAR, MovementKind.DEPOSIT)
     TAXABLE_KINDS = (MovementKind.REGULAR,)
     DELETABLE_KINDS = (MovementKind.REGULAR, MovementKind.DEPOSIT, MovementKind.TRANSFER)
@@ -413,9 +417,6 @@ class FinanceAlert(models.Model):
     Las alertas sin ``dedupe_key`` (``rule=other``) no las toca el motor.
     """
 
-    Rule = AlertRule
-    Level = AlertLevel
-
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="finance_alerts")
     rule = models.CharField(max_length=32, choices=AlertRule.choices, default=AlertRule.OTHER)
     level = models.CharField(max_length=16, choices=AlertLevel.choices, default=AlertLevel.INFO)
@@ -423,7 +424,9 @@ class FinanceAlert(models.Model):
     period = models.CharField(max_length=7, blank=True)
     budget = models.ForeignKey(FinanceBudget, null=True, blank=True, on_delete=models.CASCADE, related_name="alerts")
     transaction = models.ForeignKey(FinanceTransaction, null=True, blank=True, on_delete=models.CASCADE, related_name="alerts")
-    dedupe_key = models.CharField(max_length=80, null=True, blank=True)
+    # NULL (no "") en las alertas sin clave: la restricción única (owner, dedupe_key) admite
+    # varios NULL pero no varios "" (el mismo caso que unique=True + blank=True en Django).
+    dedupe_key = models.CharField(max_length=80, null=True, blank=True)  # NOSONAR: null=True necesario por la restricción única
     title = models.CharField(max_length=160)
     description = models.TextField()
     action_label = models.CharField(max_length=80, blank=True)

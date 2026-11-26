@@ -22,15 +22,15 @@ from django.db.models import Min, Q, Sum
 LEG_TOLERANCE = timedelta(seconds=5)
 
 
-def classify_movements(apps, schema_editor):
-    Transaction = apps.get_model("core", "FinanceTransaction")
-    Transaction.objects.filter(category="Transferencia", count_in_summary=False).update(kind="TRANSFER")
-    Transaction.objects.filter(category="Depósito").update(kind="DEPOSIT")
+def classify_movements(apps):
+    transaction_model = apps.get_model("core", "FinanceTransaction")
+    transaction_model.objects.filter(category="Transferencia", count_in_summary=False).update(kind="TRANSFER")
+    transaction_model.objects.filter(category="Depósito").update(kind="DEPOSIT")
 
 
-def link_transfer_legs(apps, schema_editor):
-    Transaction = apps.get_model("core", "FinanceTransaction")
-    unlinked = Transaction.objects.filter(kind="TRANSFER", transfer_group__isnull=True)
+def link_transfer_legs(apps):
+    transaction_model = apps.get_model("core", "FinanceTransaction")
+    unlinked = transaction_model.objects.filter(kind="TRANSFER", transfer_group__isnull=True)
     for debit in unlinked.filter(transaction_type="GASTO").order_by("id"):
         credit = (
             unlinked.filter(
@@ -44,10 +44,10 @@ def link_transfer_legs(apps, schema_editor):
             .first()
         )
         if credit:
-            Transaction.objects.filter(pk__in=[debit.pk, credit.pk]).update(transfer_group=uuid.uuid4())
+            transaction_model.objects.filter(pk__in=[debit.pk, credit.pk]).update(transfer_group=uuid.uuid4())
 
 
-def tidy_categories(apps, schema_editor):
+def tidy_categories(apps):
     for model_name in ("FinanceTransaction", "FinanceBudget"):
         model = apps.get_model("core", model_name)
         for record in model.objects.only("id", "category"):
@@ -68,18 +68,18 @@ def rename_case_duplicates(records, field, scope):
             type(record).objects.filter(pk=record.pk).update(**{field: name})
 
 
-def deduplicate_names(apps, schema_editor):
-    Account = apps.get_model("core", "FinanceAccount")
-    Budget = apps.get_model("core", "FinanceBudget")
-    rename_case_duplicates(Account.objects.order_by("id"), "name", lambda account: account.owner_id)
-    rename_case_duplicates(Budget.objects.order_by("id"), "category", lambda budget: (budget.owner_id, budget.month))
+def deduplicate_names(apps):
+    account_model = apps.get_model("core", "FinanceAccount")
+    budget_model = apps.get_model("core", "FinanceBudget")
+    rename_case_duplicates(account_model.objects.order_by("id"), "name", lambda account: account.owner_id)
+    rename_case_duplicates(budget_model.objects.order_by("id"), "category", lambda budget: (budget.owner_id, budget.month))
 
 
-def reconcile_balances(apps, schema_editor):
-    Account = apps.get_model("core", "FinanceAccount")
-    Transaction = apps.get_model("core", "FinanceTransaction")
-    for account in Account.objects.all():
-        totals = Transaction.objects.filter(account=account).aggregate(
+def reconcile_balances(apps):
+    account_model = apps.get_model("core", "FinanceAccount")
+    transaction_model = apps.get_model("core", "FinanceTransaction")
+    for account in account_model.objects.all():
+        totals = transaction_model.objects.filter(account=account).aggregate(
             income=Sum("amount", filter=Q(transaction_type="INGRESO")),
             expense=Sum("amount", filter=Q(transaction_type="GASTO")),
             first=Min("occurred_at"),
@@ -88,23 +88,23 @@ def reconcile_balances(apps, schema_editor):
         common = {"owner_id": account.owner_id, "account": account, "amount": abs(difference), "count_in_summary": False}
         if difference > 0:
             opened_at = min(filter(None, (account.created_at, totals["first"]))) - timedelta(seconds=1)
-            Transaction.objects.create(
+            transaction_model.objects.create(
                 name="Saldo inicial", category="Saldo inicial", kind="OPENING",
                 transaction_type="INGRESO", status="Acreditado", occurred_at=opened_at, **common,
             )
         elif difference < 0:
-            Transaction.objects.create(
+            transaction_model.objects.create(
                 name="Ajuste de saldo", category="Ajuste de saldo", kind="ADJUSTMENT",
                 transaction_type="GASTO", status="Completado", occurred_at=account.updated_at, **common,
             )
 
 
-def forwards(apps, schema_editor):
-    classify_movements(apps, schema_editor)
-    link_transfer_legs(apps, schema_editor)
-    tidy_categories(apps, schema_editor)
-    deduplicate_names(apps, schema_editor)
-    reconcile_balances(apps, schema_editor)
+def forwards(apps, _schema_editor):  # firma de RunPython; los pasos no usan el schema editor
+    classify_movements(apps)
+    link_transfer_legs(apps)
+    tidy_categories(apps)
+    deduplicate_names(apps)
+    reconcile_balances(apps)
 
 
 class Migration(migrations.Migration):

@@ -8,7 +8,7 @@ from decimal import Decimal
 from openpyxl import load_workbook
 from rest_framework.test import APIClient
 
-from .models import FinanceBudget, FinanceTransaction
+from .models import FinanceBudget, FinanceTransaction, MovementKind
 from .testing import API, FinanceAPITestCase, local_datetime
 from .xlsx_export import (
     BUDGETS_SHEET,
@@ -147,7 +147,7 @@ class ExcelExportTests(FinanceAPITestCase):
 
     def test_summary_kinds_match_the_model(self):
         self.assertEqual(SUMMARY_KINDS, tuple(FinanceTransaction.SUMMARY_KINDS))
-        self.assertEqual(SUMMARY_KIND_LABELS, tuple(FinanceTransaction.Kind(kind).label for kind in FinanceTransaction.SUMMARY_KINDS))
+        self.assertEqual(SUMMARY_KIND_LABELS, tuple(MovementKind(kind).label for kind in FinanceTransaction.SUMMARY_KINDS))
 
 
 class ExportErrorTests(FinanceAPITestCase):

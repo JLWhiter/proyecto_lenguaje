@@ -63,6 +63,7 @@ TYPE_LABELS = {INCOME: "Ingreso", EXPENSE: "Gasto"}
 SUMMARY_KINDS = ("REGULAR", "DEPOSIT")
 SUMMARY_KIND_LABELS = ("Movimiento", "Depósito")
 UNCATEGORIZED = "Sin categoría"
+CATEGORY_HEADER = "Categoría"
 
 MOVEMENTS_SHEET = "Movimientos"
 SUMMARY_SHEET = "Resumen"
@@ -98,7 +99,7 @@ COUNT_FORMAT = "#,##0"
 FILTERS_ROW = 4
 HEADER_ROW = 6
 FIRST_DATA_ROW = HEADER_ROW + 1
-MOVEMENT_HEADERS = ("Fecha", "Hora", "Descripción", "Categoría", "Tipo", "Clase", "Cuenta", "Monto", "Estado")
+MOVEMENT_HEADERS = ("Fecha", "Hora", "Descripción", CATEGORY_HEADER, "Tipo", "Clase", "Cuenta", "Monto", "Estado")
 TYPE_COLUMN, KIND_COLUMN, AMOUNT_COLUMN = 5, 6, 8
 DESCRIPTION_COLUMN = 3
 TOTAL_LABEL_COLUMN = AMOUNT_COLUMN - 1
@@ -117,9 +118,9 @@ CHART_COLUMN_WIDTH = 9.5
 CHART_WIDTH_CM = 16.5
 ROW_HEIGHT_CM = 0.53
 CHARS_PER_WIDTH = 1.1  # letras promedio de Calibri 11 por unidad de ancho de columna
-CATEGORY_HEADERS = ("Categoría", "Monto", "% del total", "Movimientos")
+CATEGORY_HEADERS = (CATEGORY_HEADER, "Monto", "% del total", "Movimientos")
 MONTH_HEADERS = ("Mes", "Ingresos", "Gastos", "Neto")
-BUDGET_HEADERS = ("Categoría", "Límite", "Gastado", "Restante", "% usado", "Estado")
+BUDGET_HEADERS = (CATEGORY_HEADER, "Límite", "Gastado", "Restante", "% usado", "Estado")
 BUDGET_STATE_COLORS = {"Normal": EMERALD_DARK, "Precaución": AMBER, "Crítico": RED, "Excedido": RED}
 # Semáforo del % usado con los umbrales de los estados de ``budgets``: verde, ámbar (75 %) y rojo (90 %).
 BUDGET_LIGHTS = [0, CAUTION_FROM / 100, CRITICAL_FROM / 100]
@@ -266,6 +267,11 @@ def report_period(report):
     if len(months) == 1:
         return f"Historial completo: {period_label(months[0])}"
     return f"Historial completo: {period_label(months[0])} – {period_label(months[-1])}"
+
+
+def generated_text(report):
+    """'Generado el 26/11/2026 18:05'."""
+    return f"Generado el {report.generated_at:%d/%m/%Y %H:%M}"
 
 
 def plural(count, singular, many):
@@ -438,7 +444,7 @@ def setup_page(ws, title, report, title_rows=None):
     ws.print_options.horizontalCentered = True
     ws.oddHeader.left.text = f"{APP_NAME} · {title}"
     ws.oddHeader.right.text = report_period(report)
-    ws.oddFooter.left.text = f"Generado el {report.generated_at:%d/%m/%Y %H:%M}"
+    ws.oddFooter.left.text = generated_text(report)
     ws.oddFooter.right.text = "Página &P de &N"
     for part in (ws.oddHeader.left, ws.oddHeader.right, ws.oddFooter.left, ws.oddFooter.right):
         part.size = 9
@@ -455,7 +461,7 @@ def write_banner(ws, title, report, layout):
         paint(ws, row, last, INK_FILL)
     paint(ws, 3, last, BRAND_FILL)
     merge(ws, (1, 1), (layout.first_column, split), f"{APP_NAME} · {title}", TITLE_LOOK)
-    merge(ws, (1, 1), (split + 1, last), f"Generado el {report.generated_at:%d/%m/%Y %H:%M}", STAMP_LOOK)
+    merge(ws, (1, 1), (split + 1, last), generated_text(report), STAMP_LOOK)
     merge(ws, (2, 2), (layout.first_column, split), report_period(report), PERIOD_LOOK)
     merge(ws, (2, 2), (split + 1, last), report.owner, OWNER_LOOK)
     for row, height in ((1, 36), (2, 22), (3, 5)):

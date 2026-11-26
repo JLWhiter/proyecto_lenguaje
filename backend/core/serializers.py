@@ -6,7 +6,7 @@ from rest_framework.fields import empty
 from .alerts import ALERT_ACTIONS, DEFAULT_SNOOZE_HOURS, MAX_SNOOZE_HOURS
 from .categories import category_key
 from .finance import existing_category
-from .models import FinanceAccount, FinanceBudget, FinanceTransaction, first_matching
+from .models import FinanceAccount, FinanceBudget, MovementType, first_matching
 from .periods import PERIOD_ERROR, PERIOD_REGEX, current_period, end_of_today, period_label, shift_month
 from .transaction_filters import category_label
 
@@ -125,7 +125,7 @@ class PeriodQuerySerializer(serializers.Serializer):
 
 class TransactionFilterSerializer(PeriodQuerySerializer):
     search = serializers.CharField(allow_blank=True, default="")
-    tipo = serializers.ChoiceField(choices=FinanceTransaction.Type.choices, allow_blank=True, default="")
+    tipo = serializers.ChoiceField(choices=MovementType.choices, allow_blank=True, default="")
     categoria = serializers.CharField(allow_blank=True, default="")
     cuenta_id = OwnedAccountField(source="account", include_archived=True, allow_null=True, default=None)
 
@@ -158,7 +158,7 @@ class TransactionCreateSerializer(ExistingCategoryMixin, serializers.Serializer)
     name = serializers.CharField(max_length=160)
     category = CategoryField()
     amount = MoneyField()
-    type = serializers.ChoiceField(choices=FinanceTransaction.Type.choices)
+    type = serializers.ChoiceField(choices=MovementType.choices)
     account_id = OwnedAccountField(source="account")
     occurred_at = MovementDateTimeField(required=False)
 

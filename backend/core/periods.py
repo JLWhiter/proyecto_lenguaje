@@ -8,6 +8,7 @@ configurada en ``settings.TIME_ZONE`` (America/Lima).
 
 import calendar
 from datetime import date, datetime, time, timedelta
+from enum import Enum
 
 from django.utils import timezone
 
@@ -20,6 +21,14 @@ FULL_MONTH_NAMES = (
 )
 
 
+class PeriodTiming(Enum):
+    """Ubicación de un período respecto del mes de hoy."""
+
+    PAST = "past"  # ya cerró
+    CURRENT = "current"  # es el mes en curso
+    FUTURE = "future"  # aún no empieza
+
+
 def parse_period(period):
     """'2024-05' -> (2024, 5)."""
     year, month = period.split("-")
@@ -29,6 +38,20 @@ def parse_period(period):
 def period_of(day):
     """Período al que pertenece una fecha: date(2024, 5, 24) -> '2024-05'."""
     return f"{day.year:04d}-{day.month:02d}"
+
+
+def period_timing(period, today):
+    """¿El período ya cerró, es el mes de ``today`` o aún no empieza?
+
+    Compara (año, mes) como números, sin depender del orden de los textos 'AAAA-MM'.
+    """
+    target = parse_period(period)
+    current = (today.year, today.month)
+    if target < current:
+        return PeriodTiming.PAST
+    if target > current:
+        return PeriodTiming.FUTURE
+    return PeriodTiming.CURRENT
 
 
 def shift_month(period, offset):
@@ -50,10 +73,10 @@ def days_in_period(period):
 
 def days_remaining(period, today):
     """Días que faltan para cerrar el período contando hoy; 0 si ya terminó."""
-    current = period_of(today)
-    if period < current:
+    timing = period_timing(period, today)
+    if timing is PeriodTiming.PAST:
         return 0
-    if period > current:
+    if timing is PeriodTiming.FUTURE:
         return days_in_period(period)
     return days_in_period(period) - today.day + 1
 

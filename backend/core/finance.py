@@ -18,7 +18,7 @@ from .alert_service import dashboard_alerts
 from .alerts import BudgetUsage, budget_insight
 from .budgets import STATES, budget_detail, budget_state, projected_spending, usage_percentage
 from .categories import DEFAULT_CATEGORIES, canonical_category, category_key
-from .models import FinanceAccount, FinanceBudget, FinanceTransaction
+from .models import FinanceAccount, FinanceBudget, FinanceTransaction, MovementKind, MovementType
 from .periods import days_remaining, period_label, period_of, short_date, year_bounds
 from .taxes import annual_projection, income_tax, to_cents
 from .transaction_filters import (
@@ -32,25 +32,23 @@ from .transaction_filters import (
 )
 
 ZERO = Decimal("0.00")
-Kind = FinanceTransaction.Kind
-Type = FinanceTransaction.Type
 
 # Claves de ``category_key``.
-DEFAULT_CATEGORY_TYPES = {"salario": {Type.INCOME}, "honorarios": {Type.INCOME}, "otros": {Type.INCOME, Type.EXPENSE}}
+DEFAULT_CATEGORY_TYPES = {"salario": {MovementType.INCOME}, "honorarios": {MovementType.INCOME}, "otros": {MovementType.INCOME, MovementType.EXPENSE}}
 CATEGORY_ICONS = {
     "alimentacion": "shopping", "ropa": "shopping", "transporte": "car", "vivienda": "home", "servicios": "home",
     "salud": "health", "entretenimiento": "gamepad", "salario": "briefcase", "honorarios": "briefcase",
 }
-KIND_ICONS = {Kind.TRANSFER: "transfer", Kind.DEPOSIT: "income", Kind.OPENING: "income", Kind.ADJUSTMENT: "adjust"}
+KIND_ICONS = {MovementKind.TRANSFER: "transfer", MovementKind.DEPOSIT: "income", MovementKind.OPENING: "income", MovementKind.ADJUSTMENT: "adjust"}
 TAX_NOTE = "Estimación de rentas de quinta categoría. No incluye retenciones, créditos ni otras rentas."
 
 
 # --- Movimientos -----------------------------------------------------------
 
 def transaction_icon(movement):
-    if movement.kind != Kind.REGULAR:
+    if movement.kind != MovementKind.REGULAR:
         return KIND_ICONS[movement.kind]
-    default = "income" if movement.transaction_type == Type.INCOME else "shopping"
+    default = "income" if movement.transaction_type == MovementType.INCOME else "shopping"
     return CATEGORY_ICONS.get(category_key(movement.category), default)
 
 
@@ -101,8 +99,8 @@ def counted_in_summary(items):
 def summary_totals(items):
     """Ingresos y gastos (REGULAR y DEPOSIT) de una lista de movimientos serializados."""
     counted = counted_in_summary(items)
-    income = total_amount(filter(of_type(Type.INCOME), counted))
-    expenses = -total_amount(filter(of_type(Type.EXPENSE), counted))
+    income = total_amount(filter(of_type(MovementType.INCOME), counted))
+    expenses = -total_amount(filter(of_type(MovementType.EXPENSE), counted))
     return income, expenses
 
 
@@ -140,7 +138,7 @@ def taxable_income(user, year):
         FinanceTransaction.objects.filter(
             owner=user,
             kind__in=FinanceTransaction.TAXABLE_KINDS,
-            transaction_type=Type.INCOME,
+            transaction_type=MovementType.INCOME,
             status__in=analytics.SUMMARY_STATUSES,
             occurred_at__gte=start,
             occurred_at__lt=end,
@@ -201,7 +199,7 @@ def spent_by_category(user, month):
     """Gasto REGULAR del mes por clave de categoría (``category_key``), en una sola consulta agregada."""
     rows = (
         FinanceTransaction.objects.filter(
-            owner=user, kind=Kind.REGULAR, transaction_type=Type.EXPENSE, status__in=analytics.SUMMARY_STATUSES
+            owner=user, kind=MovementKind.REGULAR, transaction_type=MovementType.EXPENSE, status__in=analytics.SUMMARY_STATUSES
         )
         .in_period(month)
         .values("category")
@@ -349,7 +347,7 @@ def category_entry(name, default, types=(), uses=0):
 
 def category_usage(user, exclude=None):
     """Movimientos REGULAR por categoría y tipo, de la forma más usada a la menos usada."""
-    rows = FinanceTransaction.objects.filter(owner=user, kind=Kind.REGULAR)
+    rows = FinanceTransaction.objects.filter(owner=user, kind=MovementKind.REGULAR)
     if exclude is not None:
         rows = rows.exclude(pk=exclude.pk)
     return rows.values("category", "transaction_type").annotate(total=Count("id")).order_by("-total", "category")
@@ -371,7 +369,7 @@ def category_catalog(user):
     más usada en los movimientos y luego la de los presupuestos).
     """
     catalog = {
-        category_key(name): category_entry(name, True, DEFAULT_CATEGORY_TYPES.get(category_key(name), {Type.EXPENSE}))
+        category_key(name): category_entry(name, True, DEFAULT_CATEGORY_TYPES.get(category_key(name), {MovementType.EXPENSE}))
         for name in DEFAULT_CATEGORIES
     }
     for row in category_usage(user):
@@ -379,7 +377,7 @@ def category_catalog(user):
         entry["tipos"].add(row["transaction_type"])
         entry["movimientos"] += row["total"]
     for name in budget_categories(user):
-        catalog.setdefault(category_key(name), category_entry(name, False, {Type.EXPENSE}))
+        catalog.setdefault(category_key(name), category_entry(name, False, {MovementType.EXPENSE}))
     ordered = sorted(catalog.values(), key=lambda entry: (-entry["movimientos"], category_key(entry["nombre"])))
     return {"categorias": [{**entry, "tipos": sorted(entry["tipos"])} for entry in ordered]}
 

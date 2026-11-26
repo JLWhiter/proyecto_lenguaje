@@ -42,15 +42,13 @@ from .alerts import (
 )
 from .analytics import SUMMARY_STATUSES
 from .categories import category_key
-from .models import AlertEvaluation, FinanceAlert, FinanceBudget, FinanceTransaction, active_alert
+from .models import AlertEvaluation, FinanceAlert, FinanceBudget, FinanceTransaction, MovementKind, MovementType, active_alert
 from .periods import local_today, period_bounds, period_of, shift_month
 from .transaction_filters import normalize_text
 
 ZERO = Decimal("0.00")
 ACTIVE, ALL = "activas", "todas"
 FK_FIELDS = {"budget_id": "budget", "transaction_id": "transaction"}
-Kind = FinanceTransaction.Kind
-Type = FinanceTransaction.Type
 
 
 # --- Carga de datos ------------------------------------------------------------
@@ -61,7 +59,7 @@ def recent_expenses(user, period):
     end = period_bounds(period)[1]
     rows = (
         FinanceTransaction.objects.filter(
-            owner=user, kind=Kind.REGULAR, transaction_type=Type.EXPENSE, status__in=SUMMARY_STATUSES,
+            owner=user, kind=MovementKind.REGULAR, transaction_type=MovementType.EXPENSE, status__in=SUMMARY_STATUSES,
             occurred_at__gte=start, occurred_at__lt=end,
         )
         .order_by("occurred_at", "id")
@@ -81,8 +79,8 @@ def month_flows(user, period):
         FinanceTransaction.objects.filter(owner=user, kind__in=FinanceTransaction.SUMMARY_KINDS, status__in=SUMMARY_STATUSES)
         .in_period(period)
         .aggregate(
-            income=Sum("amount", filter=Q(transaction_type=Type.INCOME)),
-            expenses=Sum("amount", filter=Q(transaction_type=Type.EXPENSE)),
+            income=Sum("amount", filter=Q(transaction_type=MovementType.INCOME)),
+            expenses=Sum("amount", filter=Q(transaction_type=MovementType.EXPENSE)),
         )
     )
     return MonthFlows(period, totals["income"] or ZERO, totals["expenses"] or ZERO)

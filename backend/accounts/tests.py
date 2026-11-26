@@ -864,10 +864,31 @@ class SettingsHardeningTests(SimpleTestCase):
         self.assertEqual(overridden["REST_FRAMEWORK"]["DEFAULT_THROTTLE_RATES"]["login"], "3/min")
         self.assertEqual(overridden["REST_FRAMEWORK"]["NUM_PROXIES"], 0)
 
+    def test_every_throttle_rate_keeps_its_environment_variable(self):
+        env = {
+            "FINOVA_THROTTLE_REGISTER_RATE": "1/min",
+            "FINOVA_THROTTLE_PASSWORD_RESET_RATE": "2/min",
+            "FINOVA_THROTTLE_VERIFY_RESEND_RATE": "3/min",
+            "FINOVA_THROTTLE_PASSWORD_CHANGE_RATE": "4/min",
+        }
+        rates = load_settings(**env)["REST_FRAMEWORK"]["DEFAULT_THROTTLE_RATES"]
+
+        self.assertEqual(
+            rates,
+            {"login": "10/min", "register": "1/min", "password_reset": "2/min", "verify_resend": "3/min", "password_change": "4/min"},
+        )
+
 
 class HealthTests(AuthApiTestCase):
     def test_health_endpoint_still_available(self):
         response = self.client.get("/api/health/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["status"], "ok")
+        self.assertEqual(response.json(), {"status": "ok", "service": "proyecto-lenguaje-api"})
+
+    def test_health_only_accepts_safe_methods(self):
+        for url in ("/api/health/", "/api/v1/health/"):
+            with self.subTest(url=url):
+                self.assertEqual(self.client.head(url).status_code, 200)
+                for method in (self.client.post, self.client.put, self.client.delete):
+                    self.assertEqual(method(url).status_code, 405)

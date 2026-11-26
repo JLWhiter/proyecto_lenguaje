@@ -30,11 +30,18 @@ from .services import (
     send_verification_email,
     user_from_uid,
 )
-from .throttling import ScopedThrottleMixin
+from .throttling import (
+    CREDENTIAL_CHANGE_SCOPE,
+    LOGIN_SCOPE,
+    RECOVERY_SCOPE,
+    REGISTER_SCOPE,
+    VERIFY_RESEND_SCOPE,
+    ScopedThrottleMixin,
+)
 
 REMEMBER_ME_AGE = int(timedelta(days=30).total_seconds())
 
-PASSWORD_RESET_MESSAGE = (
+RESET_REQUESTED_MESSAGE = (
     "Si el correo está registrado, recibirás instrucciones para restablecer tu contraseña."
 )
 INVALID_RESET_LINK_MESSAGE = "El enlace no es válido o ya expiró."
@@ -60,7 +67,7 @@ class CsrfTokenView(APIView):
 class RegisterView(ScopedThrottleMixin, APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_scope = "register"
+    throttle_scope = REGISTER_SCOPE
 
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
@@ -86,7 +93,7 @@ class RegisterView(ScopedThrottleMixin, APIView):
 class LoginView(ScopedThrottleMixin, APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_scope = "login"
+    throttle_scope = LOGIN_SCOPE
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data, context={"request": request})
@@ -155,7 +162,7 @@ class MeView(APIView):
 @method_decorator(csrf_protect, name="dispatch")
 class PasswordChangeView(ScopedThrottleMixin, APIView):
     permission_classes = [IsAuthenticated]
-    throttle_scope = "password_change"
+    throttle_scope = CREDENTIAL_CHANGE_SCOPE
 
     def post(self, request):
         serializer = PasswordChangeSerializer(data=request.data, context={"request": request})
@@ -194,7 +201,7 @@ class SessionStatusView(APIView):
 class PasswordResetView(ScopedThrottleMixin, APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_scope = "password_reset"
+    throttle_scope = RECOVERY_SCOPE
 
     def post(self, request):
         serializer = PasswordResetSerializer(data=request.data)
@@ -209,7 +216,7 @@ class PasswordResetView(ScopedThrottleMixin, APIView):
         # The same response is returned whether or not the account exists.
         return Response(
             {
-                "detail": PASSWORD_RESET_MESSAGE,
+                "detail": RESET_REQUESTED_MESSAGE,
                 "email_delivery_configured": email_delivery_configured(),
             },
             status=status.HTTP_202_ACCEPTED,
@@ -269,7 +276,7 @@ class VerifyEmailView(APIView):
 @method_decorator(csrf_protect, name="dispatch")
 class ResendVerificationEmailView(ScopedThrottleMixin, APIView):
     permission_classes = [IsAuthenticated]
-    throttle_scope = "verify_resend"
+    throttle_scope = VERIFY_RESEND_SCOPE
 
     def post(self, request):
         user = request.user

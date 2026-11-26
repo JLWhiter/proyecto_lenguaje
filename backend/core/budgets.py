@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
 from .money import money
-from .periods import days_in_period, period_of
+from .periods import PeriodTiming, days_in_period, period_timing
 
 CENT = Decimal("0.01")
 CAUTION_FROM = 75
@@ -53,20 +53,24 @@ def projected_spending(spent, period, today):
     - Meses pasados: lo gastado (el mes ya cerró).
     - Meses futuros: 0.
     """
-    current = period_of(today)
-    if period < current:
+    timing = period_timing(period, today)
+    if timing is PeriodTiming.PAST:
         return spent
-    if period > current:
+    if timing is PeriodTiming.FUTURE:
         return Decimal("0.00")
     return (spent / today.day * days_in_period(period)).quantize(CENT, rounding=ROUND_HALF_UP)
 
 
 def budget_detail(remaining, projection, period, today, currency="PEN"):
-    """Frase corta que acompaña a cada presupuesto en la lista."""
-    current = period_of(today)
-    if period > current:
+    """Frase corta que acompaña a cada presupuesto en la lista.
+
+    Mes futuro: aún no empieza; mes en curso: la proyección; mes cerrado: lo que
+    sobró o el exceso (``remaining`` negativo).
+    """
+    timing = period_timing(period, today)
+    if timing is PeriodTiming.FUTURE:
         return "El período aún no empieza."
-    if period == current:
+    if timing is PeriodTiming.CURRENT:
         return f"Proyección a fin de mes: {money(projection, currency)}"
     if remaining >= 0:
         return f"Mes cerrado con {money(remaining, currency)} sin usar."

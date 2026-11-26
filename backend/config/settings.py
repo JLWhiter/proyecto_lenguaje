@@ -12,6 +12,12 @@ def env_list(name, default=""):
     return [item.strip() for item in os.environ.get(name, default).split(",") if item.strip()]
 
 
+def env_throttle_rates(defaults):
+    """{scope: rate} from (scope, default rate) pairs. Each rate can be overridden
+    with the FINOVA_THROTTLE_<SCOPE>_RATE environment variable."""
+    return {scope: os.environ.get(f"FINOVA_THROTTLE_{scope.upper()}_RATE", rate) for scope, rate in defaults}
+
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 INSECURE_DEV_SECRET_KEY = "django-insecure-local-development-key"
@@ -111,13 +117,16 @@ REST_FRAMEWORK = {
     ],
     # Rates for the scoped throttles used by accounts views ("N/second|minute|hour|day").
     # Counters live in the default cache (local memory per process unless CACHES is set).
-    "DEFAULT_THROTTLE_RATES": {
-        "login": os.environ.get("FINOVA_THROTTLE_LOGIN_RATE", "10/min"),
-        "register": os.environ.get("FINOVA_THROTTLE_REGISTER_RATE", "10/hour"),
-        "password_reset": os.environ.get("FINOVA_THROTTLE_PASSWORD_RESET_RATE", "5/hour"),
-        "verify_resend": os.environ.get("FINOVA_THROTTLE_VERIFY_RESEND_RATE", "5/hour"),
-        "password_change": os.environ.get("FINOVA_THROTTLE_PASSWORD_CHANGE_RATE", "10/hour"),
-    },
+    # Scopes are the names of the rate limits (accounts/throttling.py), not credentials.
+    "DEFAULT_THROTTLE_RATES": env_throttle_rates(
+        (
+            ("login", "10/min"),
+            ("register", "10/hour"),
+            ("password_reset", "5/hour"),
+            ("verify_resend", "5/hour"),
+            ("password_change", "10/hour"),
+        )
+    ),
     # Anonymous throttles are keyed by client IP. 0 = trust only REMOTE_ADDR, so a
     # forged X-Forwarded-For header cannot bypass the limits. Set it to the number
     # of reverse proxies in front of Django when deployed behind one.

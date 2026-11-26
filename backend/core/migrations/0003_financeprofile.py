@@ -6,47 +6,47 @@ from django.db import migrations, models
 
 
 def mark_existing_users_as_legacy(apps, schema_editor):
-    FinanceProfile = apps.get_model("core", "FinanceProfile")
-    FinanceAccount = apps.get_model("core", "FinanceAccount")
-    FinanceBudget = apps.get_model("core", "FinanceBudget")
-    FinanceAlert = apps.get_model("core", "FinanceAlert")
-    FinanceTransaction = apps.get_model("core", "FinanceTransaction")
+    profile_model = apps.get_model("core", "FinanceProfile")
+    account_model = apps.get_model("core", "FinanceAccount")
+    budget_model = apps.get_model("core", "FinanceBudget")
+    alert_model = apps.get_model("core", "FinanceAlert")
+    transaction_model = apps.get_model("core", "FinanceTransaction")
     app_label, model_name = settings.AUTH_USER_MODEL.split(".")
-    User = apps.get_model(app_label, model_name)
+    user_model = apps.get_model(app_label, model_name)
     database = schema_editor.connection.alias
 
-    for user_id in User.objects.using(database).values_list("pk", flat=True).iterator():
+    for user_id in user_model.objects.using(database).values_list("pk", flat=True).iterator():
         has_saved_data = any([
-            FinanceAccount.objects.using(database).filter(owner_id=user_id).exists(),
-            FinanceBudget.objects.using(database).filter(owner_id=user_id).exists(),
-            FinanceAlert.objects.using(database).filter(owner_id=user_id).exists(),
-            FinanceTransaction.objects.using(database).filter(owner_id=user_id).exists(),
+            account_model.objects.using(database).filter(owner_id=user_id).exists(),
+            budget_model.objects.using(database).filter(owner_id=user_id).exists(),
+            alert_model.objects.using(database).filter(owner_id=user_id).exists(),
+            transaction_model.objects.using(database).filter(owner_id=user_id).exists(),
         ])
-        FinanceProfile.objects.using(database).get_or_create(
+        profile_model.objects.using(database).get_or_create(
             owner_id=user_id,
             defaults={"use_sample_data": not has_saved_data},
         )
         if has_saved_data:
             continue
 
-        FinanceAccount.objects.using(database).bulk_create([
-            FinanceAccount(owner_id=user_id, name="BCP Débito Soles", account_type="Cuenta Corriente", description="**** 4812", status="Activa", badge="Activa", icon="credit", balance="4280.00"),
-            FinanceAccount(owner_id=user_id, name="BBVA Ahorros Sueldo", account_type="Ahorros Automáticos", description="**** 9104", status="Activa", badge="Activa", icon="piggy", balance="2850.00"),
-            FinanceAccount(owner_id=user_id, name="Billetera Digital Yape / Plin", account_type="Vinculada a teléfono", description="987 - *** - 123", status="Instantánea", badge="Instantánea", icon="phone", balance="620.00"),
-            FinanceAccount(owner_id=user_id, name="Efectivo Disponible en Bóveda", account_type="Fondo manual de emergencia", description="Fondo manual de emergencia", status="Físico", badge="Físico", icon="cash", balance="700.00"),
+        account_model.objects.using(database).bulk_create([
+            account_model(owner_id=user_id, name="BCP Débito Soles", account_type="Cuenta Corriente", description="**** 4812", status="Activa", badge="Activa", icon="credit", balance="4280.00"),
+            account_model(owner_id=user_id, name="BBVA Ahorros Sueldo", account_type="Ahorros Automáticos", description="**** 9104", status="Activa", badge="Activa", icon="piggy", balance="2850.00"),
+            account_model(owner_id=user_id, name="Billetera Digital Yape / Plin", account_type="Vinculada a teléfono", description="987 - *** - 123", status="Instantánea", badge="Instantánea", icon="phone", balance="620.00"),
+            account_model(owner_id=user_id, name="Efectivo Disponible en Bóveda", account_type="Fondo manual de emergencia", description="Fondo manual de emergencia", status="Físico", badge="Físico", icon="cash", balance="700.00"),
         ])
-        FinanceBudget.objects.using(database).bulk_create([
-            FinanceBudget(owner_id=user_id, month="2024-05", category="Alimentación", description="Supermercados, delivery y restaurantes", limit_amount="1200.00", spent_amount="1137.50", projected_amount="1385.00", color="red", icon="shopping"),
-            FinanceBudget(owner_id=user_id, month="2024-05", category="Transporte", description="Combustible, peajes y apps de taxi", limit_amount="500.00", spent_amount="440.00", projected_amount="515.00", color="amber", icon="car"),
-            FinanceBudget(owner_id=user_id, month="2024-05", category="Vivienda & Servicios", description="Alquiler, luz, agua, internet y mantenimiento", limit_amount="1400.00", spent_amount="950.00", projected_amount="950.00", color="green", icon="home"),
-            FinanceBudget(owner_id=user_id, month="2024-05", category="Entretenimiento & Ocio", description="Cine, streaming y salidas de fin de semana", limit_amount="500.00", spent_amount="390.00", projected_amount="390.00", color="amber", icon="gamepad"),
-            FinanceBudget(owner_id=user_id, month="2024-05", category="Salud & Cuidado", description="Farmacia, consultas médicas y bienestar", limit_amount="400.00", spent_amount="180.00", projected_amount="180.00", color="green", icon="health"),
+        budget_model.objects.using(database).bulk_create([
+            budget_model(owner_id=user_id, month="2024-05", category="Alimentación", description="Supermercados, delivery y restaurantes", limit_amount="1200.00", spent_amount="1137.50", projected_amount="1385.00", color="red", icon="shopping"),
+            budget_model(owner_id=user_id, month="2024-05", category="Transporte", description="Combustible, peajes y apps de taxi", limit_amount="500.00", spent_amount="440.00", projected_amount="515.00", color="amber", icon="car"),
+            budget_model(owner_id=user_id, month="2024-05", category="Vivienda & Servicios", description="Alquiler, luz, agua, internet y mantenimiento", limit_amount="1400.00", spent_amount="950.00", projected_amount="950.00", color="green", icon="home"),
+            budget_model(owner_id=user_id, month="2024-05", category="Entretenimiento & Ocio", description="Cine, streaming y salidas de fin de semana", limit_amount="500.00", spent_amount="390.00", projected_amount="390.00", color="amber", icon="gamepad"),
+            budget_model(owner_id=user_id, month="2024-05", category="Salud & Cuidado", description="Farmacia, consultas médicas y bienestar", limit_amount="400.00", spent_amount="180.00", projected_amount="180.00", color="green", icon="health"),
         ])
-        FinanceAlert.objects.using(database).bulk_create([
-            FinanceAlert(owner_id=user_id, category="Presupuesto", title="Límite de presupuesto excedido en Alimentación", description="Consumo al 94.8% del tope asignado. Solo restan S/ 62.50 para los próximos 8 días.", level="rojo", action_label="Reasignar fondo", percentage=94.8),
-            FinanceAlert(owner_id=user_id, category="Gastos Inusuales", title="Consumo atípico detectado", description="Pago de S/ 380.00 en Tiendas Ripley supera tu promedio histórico semanal en compras de comercio minorista.", level="amber", action_label="Confirmar gasto"),
-            FinanceAlert(owner_id=user_id, category="Vencimientos", title="Vencimiento Tarjeta Interbank", description="Pago mínimo sugerido de S/ 480.00 para evitar penalidades e intereses moratorios.", level="indigo", action_label="Pagar ahora"),
-            FinanceAlert(owner_id=user_id, category="Metas", title="Ahorro mensual alcanzó nuevo récord", description="Has logrado consolidar +S/ 1,200.00 ahorrados en este ciclo, superando tu objetivo por un 20%.", level="green", action_label="Ver reporte detallado"),
+        alert_model.objects.using(database).bulk_create([
+            alert_model(owner_id=user_id, category="Presupuesto", title="Límite de presupuesto excedido en Alimentación", description="Consumo al 94.8% del tope asignado. Solo restan S/ 62.50 para los próximos 8 días.", level="rojo", action_label="Reasignar fondo", percentage=94.8),
+            alert_model(owner_id=user_id, category="Gastos Inusuales", title="Consumo atípico detectado", description="Pago de S/ 380.00 en Tiendas Ripley supera tu promedio histórico semanal en compras de comercio minorista.", level="amber", action_label="Confirmar gasto"),
+            alert_model(owner_id=user_id, category="Vencimientos", title="Vencimiento Tarjeta Interbank", description="Pago mínimo sugerido de S/ 480.00 para evitar penalidades e intereses moratorios.", level="indigo", action_label="Pagar ahora"),
+            alert_model(owner_id=user_id, category="Metas", title="Ahorro mensual alcanzó nuevo récord", description="Has logrado consolidar +S/ 1,200.00 ahorrados en este ciclo, superando tu objetivo por un 20%.", level="green", action_label="Ver reporte detallado"),
         ])
 
 

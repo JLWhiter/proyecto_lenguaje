@@ -8,11 +8,10 @@ from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient
 
 from .alerts import AlertRule
-from .models import FinanceAlert, FinanceBudget, FinanceTransaction
+from .models import FinanceAlert, FinanceBudget, MovementKind
 from .periods import current_period, local_today, period_label
 from .testing import API, FinanceAPITestCase, local_datetime
 
-Kind = FinanceTransaction.Kind
 
 
 class AuthenticationTests(FinanceAPITestCase):
@@ -172,7 +171,7 @@ class CurrentYearIncomeTaxTests(FinanceAPITestCase):
         self.account = self.open_account(opened_at=local_datetime(2026, 1, 1, 0))
 
     def salary(self, amount, when, name="Sueldo"):
-        return self.account.deposit(Decimal(amount), name=name, category="Salario", kind=Kind.REGULAR, occurred_at=when)
+        return self.account.deposit(Decimal(amount), name=name, category="Salario", kind=MovementKind.REGULAR, occurred_at=when)
 
     def six_salaries(self):
         for month in range(1, 7):
