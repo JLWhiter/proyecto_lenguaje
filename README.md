@@ -6,7 +6,7 @@ mensuales, recibir alertas automáticas y estimar el Impuesto a la Renta.
 
 - Backend: Python 3.13, Django 5.2, Django REST Framework 3.16, Pandas 3 y NumPy 2.
 - Frontend: React 19, Vite 7, Tailwind CSS 4, React Router 7 y Recharts.
-- Persistencia: SQLite.
+- Persistencia: MySQL
 - Autenticación: sesiones de Django con cookie `HttpOnly` y CSRF.
 
 ## Funcionalidades
